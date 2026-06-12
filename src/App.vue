@@ -60,10 +60,26 @@ function onEdit(customer) {
 </template>
 
 <style>
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
+  /* 禁用双击缩放，点击零延迟 */
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   background: #f7f8fa;
   -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  min-height: 100vh;
 }
 
 .tag-bar {
