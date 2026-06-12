@@ -50,6 +50,11 @@ export function removeCustomer(id) {
   persist()
 }
 
+export function clearCustomers() {
+  state.customers.splice(0)
+  persist()
+}
+
 // 导入合并：按 id 去重，不覆盖已有数据；返回新增条数
 export function mergeCustomers(list) {
   if (!Array.isArray(list)) return 0

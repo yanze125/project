@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
-import { showToast } from 'vant'
-import { state, saveSettings, mergeCustomers } from '../store/customers'
+import { showToast, showConfirmDialog } from 'vant'
+import { state, saveSettings, mergeCustomers, clearCustomers } from '../store/customers'
 import { exportJSON, exportCSV, readJSONFile } from '../utils/backup'
 
 defineProps({ show: Boolean })
@@ -35,6 +35,29 @@ async function onImportFile(e) {
 function onMapChange() {
   saveSettings()
 }
+
+// 清空不可恢复，双重确认防误触
+async function onClearAll() {
+  if (!state.customers.length) return showToast('暂无数据')
+  try {
+    await showConfirmDialog({
+      title: '清空所有客户',
+      message: `将删除全部 ${state.customers.length} 位客户，且无法恢复。\n建议先导出 JSON 备份。`,
+      confirmButtonText: '继续',
+      confirmButtonColor: '#ee0a24'
+    })
+    await showConfirmDialog({
+      title: '再次确认',
+      message: '确定要清空吗？此操作不可恢复！',
+      confirmButtonText: '清空',
+      confirmButtonColor: '#ee0a24'
+    })
+    clearCustomers()
+    showToast('已清空全部客户')
+  } catch {
+    /* 用户取消 */
+  }
+}
 </script>
 
 <template>
@@ -64,6 +87,16 @@ function onMapChange() {
       <van-cell title="导入 JSON 备份" is-link icon="upgrade" @click="fileInput.click()" />
     </van-cell-group>
 
+    <van-cell-group inset title="数据清理">
+      <van-cell
+        title="一键清空所有客户"
+        icon="delete-o"
+        class="danger-cell"
+        clickable
+        @click="onClearAll"
+      />
+    </van-cell-group>
+
     <div class="panel-stat">共 {{ state.customers.length }} 位客户，数据保存在本机浏览器中，换手机前请先导出备份</div>
 
     <input
@@ -82,6 +115,11 @@ function onMapChange() {
   font-size: 17px;
   font-weight: 600;
   text-align: center;
+}
+
+.danger-cell :deep(.van-cell__title),
+.danger-cell :deep(.van-icon) {
+  color: #ee0a24;
 }
 
 .panel-stat {
