@@ -106,12 +106,120 @@ try {
     ['导出 JSON 备份', '导出 CSV', '导入 JSON 备份', '高德地图', '百度地图'].every((t) => panelText.includes(t))
   )
 
-  // 8. 最终截图
+  // 8. 外观：深色/字号切换（设置面板此时仍开着）
+  const clickBtnByText = async (text) =>
+    page.evaluate((t) => {
+      const b = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === t)
+      if (b) b.click()
+      return !!b
+    }, text)
+
+  await clickBtnByText('深色')
+  await new Promise((r) => setTimeout(r, 300))
+  let htmlCls = await page.evaluate(() => document.documentElement.className)
+  check('切深色后 html 含 van-theme-dark', htmlCls.includes('van-theme-dark'), htmlCls)
+  await clickBtnByText('特大')
+  await new Promise((r) => setTimeout(r, 300))
+  htmlCls = await page.evaluate(() => document.documentElement.className)
+  check('切特大字号后 html 含 font-xlarge', htmlCls.includes('font-xlarge'), htmlCls)
+  await clickBtnByText('浅色')
+  await clickBtnByText('标准')
+  await new Promise((r) => setTimeout(r, 300))
+
+  // 关闭设置面板
+  await page.evaluate(() => document.querySelector('.van-popup--bottom .van-popup__close-icon')?.click())
+  await new Promise((r) => setTimeout(r, 500))
+
+  // 9. 星标置顶：默认"最近联系"排序下，星标第二张卡片应跳到第一位
+  const secondName = await page.$$eval('.card .name', (els) => els[1]?.textContent.trim())
+  await page.$$eval('.van-swipe-cell', (cells, target) => {
+    for (const cell of cells) {
+      if (cell.textContent.includes(target)) {
+        const btn = [...cell.querySelectorAll('button')].find((b) => b.textContent.includes('星标'))
+        btn?.click()
+        return
+      }
+    }
+  }, secondName)
+  await new Promise((r) => setTimeout(r, 400))
+  let firstName = await page.$eval('.card .name', (el) => el.textContent.trim())
+  const hasPinIcon = await page.$('.card .pin-icon')
+  check('星标后客户跳到第一且带星标图标', firstName === secondName && !!hasPinIcon, `first=${firstName}`)
+
+  // 10. 姓名排序：星标客户仍在最前（张先生被星标时，按姓名 李<张 也不能超过星标）
+  await page.click('.sort-btn')
+  await new Promise((r) => setTimeout(r, 400))
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) =>
+      e.textContent.includes('按姓名排序')
+    )
+    item?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  firstName = await page.$eval('.card .name', (el) => el.textContent.trim())
+  check('姓名排序下星标客户仍置顶', firstName === secondName, `first=${firstName}`)
+
+  // 取消星标后，姓名排序生效（李女士 拼音应在 张先生 前）
+  await page.$$eval('.van-swipe-cell button', (btns) => {
+    btns.find((b) => b.textContent.includes('取消星标'))?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  firstName = await page.$eval('.card .name', (el) => el.textContent.trim())
+  check('取消星标后按拼音排序（李在张前）', firstName === '李女士', `first=${firstName}`)
+
+  // 11. 预约备忘：给第一位客户设预约（默认当前时间，属于24h内）
+  await page.click('.card')
+  await page.waitForSelector('.form-popup input', { visible: true })
+  await page.evaluate(() => {
+    const f = [...document.querySelectorAll('.form-popup .van-field__control')].find(
+      (el) => el.placeholder === '可选，如：明早6点接机'
+    )
+    f?.click()
+  })
+  await new Promise((r) => setTimeout(r, 600))
+  await clickBtnByText('下一步')
+  await new Promise((r) => setTimeout(r, 400))
+  await clickBtnByText('确认')
+  await new Promise((r) => setTimeout(r, 400))
+  const hasApptNote = await page.evaluate(() => document.body.textContent.includes('预约备注'))
+  check('确认时间后出现预约备注字段', hasApptNote)
+  await page.$$eval('.form-popup button', (btns) => btns.find((b) => b.textContent.includes('保存')).click())
+  await new Promise((r) => setTimeout(r, 500))
+  const apptBarText = await page.$eval('.appt-bar', (el) => el.textContent).catch(() => '')
+  check('首页出现近期预约条目', apptBarText.includes('李女士'), apptBarText.trim().slice(0, 50))
+
+  // 12. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
+  // 触发后页面手势会被吞掉（真机无此问题），其后不能再有任何交互
+  await page.evaluate(() => document.querySelector('.card .van-icon-phone')?.closest('button')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+  const touched = await page.evaluate(() => {
+    const list = JSON.parse(localStorage.getItem('taxi-contacts:customers') || '[]')
+    return list.some((c) => typeof c.lastContactAt === 'number')
+  })
+  check('拨号后写入 lastContactAt', touched)
+
+  // 13. 最终截图
   await page.screenshot({ path: 'C:\\Users\\10982\\AppData\\Local\\Temp\\taxi-final.png' })
   console.log('screenshot: taxi-final.png')
 } finally {
   await browser.close()
 }
+
+// 14. vCard 纯函数（node 端直测）
+const { buildVCF } = await import('../src/utils/backup.js')
+const vcf = buildVCF([
+  { name: '张三', phone: '13800000001', address: '机场', note: '常客', tags: ['机场单'] },
+  { name: '无电话', phone: '', address: 'x', note: '', tags: [] }
+])
+check(
+  'vCard 含 FN/TEL 且跳过无电话客户',
+  vcf.count === 1 &&
+    vcf.skipped === 1 &&
+    vcf.content.includes('FN:张三') &&
+    vcf.content.includes('TEL;TYPE=CELL:13800000001') &&
+    vcf.content.includes('NOTE:') &&
+    !vcf.content.includes('无电话')
+)
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)

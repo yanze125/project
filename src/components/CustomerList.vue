@@ -1,10 +1,20 @@
 <script setup>
 import { showConfirmDialog } from 'vant'
-import { state, removeCustomer } from '../store/customers'
+import { state, removeCustomer, touchContact, togglePin } from '../store/customers'
 import { dial, navigate } from '../utils/actions'
 
 defineProps({ customers: { type: Array, default: () => [] } })
 const emit = defineEmits(['edit'])
+
+function onDial(c) {
+  touchContact(c.id)
+  dial(c.phone)
+}
+
+function onNavigate(c) {
+  touchContact(c.id)
+  navigate(c.address, state.settings.mapApp)
+}
 
 function onDelete(customer) {
   showConfirmDialog({
@@ -24,6 +34,7 @@ function onDelete(customer) {
       <div class="card" @click="emit('edit', c)">
         <div class="info">
           <div class="name-row">
+            <van-icon v-if="c.pinned" name="star" class="pin-icon" />
             <span class="name">{{ c.name }}</span>
             <van-tag v-for="t in c.tags" :key="t" plain type="primary">{{ t }}</van-tag>
           </div>
@@ -38,7 +49,7 @@ function onDelete(customer) {
             type="success"
             round
             class="action-btn"
-            @click="dial(c.phone)"
+            @click="onDial(c)"
           />
           <van-button
             v-if="c.address"
@@ -46,11 +57,18 @@ function onDelete(customer) {
             type="primary"
             round
             class="action-btn"
-            @click="navigate(c.address, state.settings.mapApp)"
+            @click="onNavigate(c)"
           />
         </div>
       </div>
       <template #right>
+        <van-button
+          square
+          type="primary"
+          :text="c.pinned ? '取消星标' : '星标'"
+          class="pin-btn"
+          @click="togglePin(c.id)"
+        />
         <van-button square type="danger" text="删除" class="del-btn" @click="onDelete(c)" />
       </template>
     </van-swipe-cell>
@@ -71,7 +89,7 @@ function onDelete(customer) {
 .card {
   display: flex;
   align-items: center;
-  background: #fff;
+  background: var(--van-background-2, #fff);
   padding: 14px;
 }
 
@@ -90,7 +108,7 @@ function onDelete(customer) {
 .name {
   font-size: 18px;
   font-weight: 600;
-  color: #323233;
+  color: var(--van-text-color, #323233);
 }
 
 .phone {
@@ -103,14 +121,14 @@ function onDelete(customer) {
 .address {
   margin-top: 4px;
   font-size: 15px;
-  color: #646566;
+  color: var(--van-text-color-2, #646566);
   word-break: break-all;
 }
 
 .note {
   margin-top: 4px;
   font-size: 13px;
-  color: #969799;
+  color: var(--van-text-color-3, #969799);
   word-break: break-all;
 }
 
@@ -127,7 +145,13 @@ function onDelete(customer) {
   font-size: 22px;
 }
 
-.del-btn {
+.del-btn,
+.pin-btn {
   height: 100%;
+}
+
+.pin-icon {
+  color: #f0a020;
+  font-size: 18px;
 }
 </style>

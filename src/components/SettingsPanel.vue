@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import { state, saveSettings, mergeCustomers, clearCustomers } from '../store/customers'
-import { exportJSON, exportCSV, readJSONFile } from '../utils/backup'
+import { exportJSON, exportCSV, exportVCF, readJSONFile } from '../utils/backup'
 
 defineProps({ show: Boolean })
 const emit = defineEmits(['update:show'])
@@ -17,6 +17,18 @@ function onExportJSON() {
 function onExportCSV() {
   if (!state.customers.length) return showToast('暂无数据可导出')
   exportCSV(state.customers)
+}
+
+function onExportVCF() {
+  if (!state.customers.length) return showToast('暂无数据可导出')
+  const { count, skipped } = exportVCF(state.customers)
+  if (!count) return showToast('客户都没有电话号码，无法导出')
+  showToast(skipped ? `已导出 ${count} 位（跳过 ${skipped} 位无电话）` : `已导出 ${count} 位客户`)
+}
+
+function setOption(key, value) {
+  state.settings[key] = value
+  saveSettings()
 }
 
 async function onImportFile(e) {
@@ -81,9 +93,43 @@ async function onClearAll() {
       </van-radio-group>
     </van-cell-group>
 
+    <van-cell-group inset title="外观">
+      <van-cell title="主题">
+        <template #value>
+          <div class="opt-btns">
+            <van-button
+              v-for="o in [['light', '浅色'], ['dark', '深色'], ['auto', '跟随系统']]"
+              :key="o[0]"
+              size="small"
+              :type="state.settings.theme === o[0] ? 'primary' : 'default'"
+              @click="setOption('theme', o[0])"
+            >
+              {{ o[1] }}
+            </van-button>
+          </div>
+        </template>
+      </van-cell>
+      <van-cell title="字号">
+        <template #value>
+          <div class="opt-btns">
+            <van-button
+              v-for="o in [['normal', '标准'], ['large', '大'], ['xlarge', '特大']]"
+              :key="o[0]"
+              size="small"
+              :type="state.settings.fontSize === o[0] ? 'primary' : 'default'"
+              @click="setOption('fontSize', o[0])"
+            >
+              {{ o[1] }}
+            </van-button>
+          </div>
+        </template>
+      </van-cell>
+    </van-cell-group>
+
     <van-cell-group inset title="数据备份">
       <van-cell title="导出 JSON 备份" is-link icon="down" @click="onExportJSON" />
       <van-cell title="导出 CSV（Excel 可打开）" is-link icon="description" @click="onExportCSV" />
+      <van-cell title="导出到手机通讯录 (.vcf)" is-link icon="contact-o" @click="onExportVCF" />
       <van-cell title="导入 JSON 备份" is-link icon="upgrade" @click="fileInput.click()" />
     </van-cell-group>
 
@@ -115,6 +161,17 @@ async function onClearAll() {
   font-size: 17px;
   font-weight: 600;
   text-align: center;
+}
+
+.opt-btns {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.opt-btns .van-button {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .danger-cell :deep(.van-cell__title),

@@ -40,6 +40,48 @@ export function exportCSV(customers) {
   download(`客户备份-${dateStr()}.csv`, csv, 'text/csv;charset=utf-8')
 }
 
+// vCard 文本转义：逗号/分号/换行
+function vesc(v) {
+  return String(v ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+}
+
+// 纯函数便于测试：生成 vCard 3.0 文本；无电话的客户跳过，返回 { content, count, skipped }
+export function buildVCF(customers) {
+  const cards = []
+  let skipped = 0
+  for (const c of customers) {
+    if (!c.phone) {
+      skipped++
+      continue
+    }
+    const noteParts = []
+    if (c.address) noteParts.push(`地址：${c.address}`)
+    if (c.note) noteParts.push(`备注：${c.note}`)
+    if (c.tags?.length) noteParts.push(`标签：${c.tags.join(' ')}`)
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${vesc(c.name)}`,
+      `N:${vesc(c.name)};;;;`,
+      `TEL;TYPE=CELL:${vesc(c.phone)}`
+    ]
+    if (noteParts.length) lines.push(`NOTE:${vesc(noteParts.join('；'))}`)
+    lines.push('END:VCARD')
+    cards.push(lines.join('\r\n'))
+  }
+  return { content: cards.join('\r\n'), count: cards.length, skipped }
+}
+
+export function exportVCF(customers) {
+  const { content, count, skipped } = buildVCF(customers)
+  if (count) download(`客户通讯录-${dateStr()}.vcf`, content, 'text/vcard;charset=utf-8')
+  return { count, skipped }
+}
+
 export function readJSONFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

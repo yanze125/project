@@ -18,9 +18,37 @@ function genId() {
     : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)
 }
 
+// 补齐缺失字段，兼容老版本数据和旧 JSON 备份
+function normalizeCustomer(item) {
+  const now = Date.now()
+  const appt =
+    item.appointment && typeof item.appointment.time === 'number'
+      ? { time: item.appointment.time, note: String(item.appointment.note || '') }
+      : null
+  return {
+    id: item.id || genId(),
+    name: String(item.name),
+    phone: String(item.phone || ''),
+    address: String(item.address || ''),
+    note: String(item.note || ''),
+    tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
+    pinned: !!item.pinned,
+    lastContactAt: typeof item.lastContactAt === 'number' ? item.lastContactAt : null,
+    appointment: appt,
+    createdAt: item.createdAt || now,
+    updatedAt: item.updatedAt || now
+  }
+}
+
 export const state = reactive({
-  customers: load(STORAGE_KEY, []),
-  settings: { mapApp: 'amap', ...load(SETTINGS_KEY, {}) }
+  customers: load(STORAGE_KEY, []).map(normalizeCustomer),
+  settings: {
+    mapApp: 'amap',
+    sortBy: 'recent',
+    theme: 'light',
+    fontSize: 'normal',
+    ...load(SETTINGS_KEY, {})
+  }
 })
 
 function persist() {
@@ -32,8 +60,7 @@ export function saveSettings() {
 }
 
 export function addCustomer(data) {
-  const now = Date.now()
-  state.customers.unshift({ id: genId(), createdAt: now, updatedAt: now, ...data })
+  state.customers.unshift(normalizeCustomer(data))
   persist()
 }
 
@@ -50,6 +77,28 @@ export function removeCustomer(id) {
   persist()
 }
 
+// 拨号/导航时记录最近联系时间，供"最近联系"排序
+export function touchContact(id) {
+  const c = state.customers.find((c) => c.id === id)
+  if (!c) return
+  c.lastContactAt = Date.now()
+  persist()
+}
+
+export function togglePin(id) {
+  const c = state.customers.find((c) => c.id === id)
+  if (!c) return
+  c.pinned = !c.pinned
+  persist()
+}
+
+export function clearAppointment(id) {
+  const c = state.customers.find((c) => c.id === id)
+  if (!c) return
+  c.appointment = null
+  persist()
+}
+
 export function clearCustomers() {
   state.customers.splice(0)
   persist()
@@ -63,17 +112,7 @@ export function mergeCustomers(list) {
   for (const item of list) {
     if (!item || typeof item !== 'object' || !item.name) continue
     if (item.id && existing.has(item.id)) continue
-    const now = Date.now()
-    state.customers.push({
-      id: item.id || genId(),
-      name: String(item.name),
-      phone: String(item.phone || ''),
-      address: String(item.address || ''),
-      note: String(item.note || ''),
-      tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
-      createdAt: item.createdAt || now,
-      updatedAt: item.updatedAt || now
-    })
+    state.customers.push(normalizeCustomer(item))
     added++
   }
   if (added) persist()
@@ -84,13 +123,25 @@ export const allTags = computed(() => [
   ...new Set(state.customers.flatMap((c) => c.tags || []))
 ])
 
+const zhCollator = new Intl.Collator('zh-Hans-CN')
+
+function compareBy(sortBy) {
+  if (sortBy === 'name') return (a, b) => zhCollator.compare(a.name, b.name)
+  if (sortBy === 'created') return (a, b) => b.createdAt - a.createdAt
+  // recent：没联系过的按最后编辑时间排
+  return (a, b) => (b.lastContactAt ?? b.updatedAt) - (a.lastContactAt ?? a.updatedAt)
+}
+
 export function filterCustomers(keyword, tag) {
   const kw = (keyword || '').trim().toLowerCase()
-  return state.customers.filter((c) => {
-    if (tag && !(c.tags || []).includes(tag)) return false
-    if (!kw) return true
-    return [c.name, c.phone, c.address, c.note, ...(c.tags || [])].some((v) =>
-      String(v || '').toLowerCase().includes(kw)
-    )
-  })
+  const cmp = compareBy(state.settings.sortBy)
+  return state.customers
+    .filter((c) => {
+      if (tag && !(c.tags || []).includes(tag)) return false
+      if (!kw) return true
+      return [c.name, c.phone, c.address, c.note, ...(c.tags || [])].some((v) =>
+        String(v || '').toLowerCase().includes(kw)
+      )
+    })
+    .sort((a, b) => (b.pinned - a.pinned) || cmp(a, b))
 }

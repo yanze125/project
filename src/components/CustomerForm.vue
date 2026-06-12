@@ -9,21 +9,55 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:show'])
 
-const blank = () => ({ name: '', phone: '', address: '', note: '', tags: [] })
+const blank = () => ({ name: '', phone: '', address: '', note: '', tags: [], appointment: null })
 const form = ref(blank())
 const newTag = ref('')
+const showApptPicker = ref(false)
+const apptDate = ref([])
+const apptTime = ref([])
 
 watch(
   () => props.show,
   (visible) => {
     if (visible) {
       form.value = props.customer
-        ? { ...props.customer, tags: [...(props.customer.tags || [])] }
+        ? {
+            ...props.customer,
+            tags: [...(props.customer.tags || [])],
+            appointment: props.customer.appointment ? { ...props.customer.appointment } : null
+          }
         : blank()
       newTag.value = ''
     }
   }
 )
+
+const apptText = computed(() => {
+  if (!form.value.appointment) return ''
+  const d = new Date(form.value.appointment.time)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+})
+
+function openApptPicker() {
+  const base = form.value.appointment ? new Date(form.value.appointment.time) : new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  apptDate.value = [String(base.getFullYear()), p(base.getMonth() + 1), p(base.getDate())]
+  apptTime.value = [p(base.getHours()), p(base.getMinutes())]
+  showApptPicker.value = true
+}
+
+function confirmAppt() {
+  const [y, mo, d] = apptDate.value.map(Number)
+  const [h, mi] = apptTime.value.map(Number)
+  const time = new Date(y, mo - 1, d, h, mi).getTime()
+  form.value.appointment = { time, note: form.value.appointment?.note || '' }
+  showApptPicker.value = false
+}
+
+function clearAppt() {
+  form.value.appointment = null
+}
 
 const tagOptions = computed(() => [
   ...new Set([...allTags.value, ...form.value.tags])
@@ -51,7 +85,8 @@ function save() {
     phone: form.value.phone.trim(),
     address: form.value.address.trim(),
     note: form.value.note.trim(),
-    tags: form.value.tags
+    tags: form.value.tags,
+    appointment: form.value.appointment
   }
   if (props.customer) {
     updateCustomer(props.customer.id, data)
@@ -128,11 +163,44 @@ function save() {
           placeholder="如：常去机场、习惯走高速"
           clearable
         />
+        <van-field
+          :model-value="apptText"
+          label="预约"
+          placeholder="可选，如：明早6点接机"
+          readonly
+          clickable
+          is-link
+          @click="openApptPicker"
+        />
+        <van-field
+          v-if="form.appointment"
+          :model-value="form.appointment.note"
+          label="预约备注"
+          placeholder="如：去机场、带大件行李"
+          clearable
+          @update:model-value="(v) => (form.appointment.note = v)"
+        >
+          <template #button>
+            <van-button size="small" plain type="danger" @click="clearAppt">清除预约</van-button>
+          </template>
+        </van-field>
       </van-cell-group>
       <div class="form-footer">
         <van-button round block type="primary" native-type="submit">保存</van-button>
       </div>
     </van-form>
+
+    <van-popup v-model:show="showApptPicker" position="bottom" round teleport="body">
+      <van-picker-group
+        title="预约时间"
+        :tabs="['选日期', '选时间']"
+        @confirm="confirmAppt"
+        @cancel="showApptPicker = false"
+      >
+        <van-date-picker v-model="apptDate" />
+        <van-time-picker v-model="apptTime" />
+      </van-picker-group>
+    </van-popup>
   </van-popup>
 </template>
 
