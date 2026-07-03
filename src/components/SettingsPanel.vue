@@ -48,6 +48,11 @@ function onMapChange() {
   saveSettings()
 }
 
+// 相对路径，本地与 Pages 子路径部署都可达
+function openTank() {
+  window.open('./tank.html')
+}
+
 // 清空不可恢复，双重确认防误触
 async function onClearAll() {
   if (!state.customers.length) return showToast('暂无数据')
@@ -131,6 +136,10 @@ async function onClearAll() {
       <van-cell title="导出 CSV（Excel 可打开）" is-link icon="description" @click="onExportCSV" />
       <van-cell title="导出到手机通讯录 (.vcf)" is-link icon="contact-o" @click="onExportVCF" />
       <van-cell title="导入 JSON 备份" is-link icon="upgrade" @click="fileInput.click()" />
+    </van-cell-group>
+
+    <van-cell-group inset title="休息一下">
+      <van-cell title="🎮 坦克大战（无敌版）" is-link @click="openTank" />
     </van-cell-group>
 
     <van-cell-group inset title="数据清理">
