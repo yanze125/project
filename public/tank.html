@@ -92,34 +92,68 @@
     border:none;box-shadow:0 4px 0 #7a4a00;
   }
   #overlay button:active{transform:translateY(3px);box-shadow:0 1px 0 #7a4a00;}
-  #touch{
-    display:none;width:100%;max-width:560px;
-    margin-top:10px;justify-content:space-between;align-items:center;
-    flex:0 0 auto;
-    padding:0 2vw;
-  }
+  #touch{display:none;}
   @media (pointer:coarse){
-    #touch{display:flex;}
+    #touch{display:block;}
     #tips{display:none;}   /* 手机上省出空间 */
     h1{margin-bottom:4px;}
   }
-  :root{--tb:clamp(44px,13vw,58px);}
+  :root{--tb:clamp(44px,13vw,58px);--joy:clamp(104px,28vw,140px);}
+  /* 控件全部悬浮,横竖屏通用:摇杆左下 / 开火右下 / 换手在开火上方 */
+  #joy{
+    position:fixed;
+    left:calc(16px + env(safe-area-inset-left));
+    bottom:calc(16px + env(safe-area-inset-bottom));
+    width:var(--joy);height:var(--joy);border-radius:50%;
+    background:rgba(22,22,31,.72);border:2px solid #3a3a4c;
+    touch-action:none;z-index:50;
+  }
+  #joyKnob{
+    position:absolute;left:50%;top:50%;
+    width:42%;height:42%;border-radius:50%;
+    background:#2c2c3c;border:2px solid #55566a;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  #joy .arr{
+    position:absolute;color:#55566a;font-size:11px;pointer-events:none;
+  }
+  #joy .arr.up{top:6%;left:50%;transform:translateX(-50%);}
+  #joy .arr.down{bottom:6%;left:50%;transform:translateX(-50%);}
+  #joy .arr.left{left:7%;top:50%;transform:translateY(-50%);}
+  #joy .arr.right{right:7%;top:50%;transform:translateY(-50%);}
   #fire{
+    position:fixed;
+    right:calc(20px + env(safe-area-inset-right));
+    bottom:calc(24px + env(safe-area-inset-bottom));
     background:var(--panel);border:2px solid #5c2420;font-family:inherit;
-    touch-action:none;
+    touch-action:none;z-index:50;
     width:calc(var(--tb)*1.7);height:calc(var(--tb)*1.7);border-radius:50%;
     color:var(--red);font-weight:900;font-size:15px;letter-spacing:.15em;
   }
   #fire:active{background:#2c2c3c;}
   #hand{
+    position:fixed;
+    right:calc(20px + env(safe-area-inset-right));
+    bottom:calc(34px + env(safe-area-inset-bottom) + var(--tb)*1.7);
     background:var(--panel);border:2px solid #3a3a4c;color:var(--steel);
     font-family:inherit;font-size:12px;letter-spacing:.1em;
-    padding:10px 14px;
+    padding:8px 12px;z-index:50;
   }
   #hand:active{background:#2c2c3c;}
-  #swipeTip{font-size:11px;color:#6f6a5e;letter-spacing:.06em;}
-  /* 左手模式:开火键换到左侧 */
-  body.left-hand #touch{flex-direction:row-reverse;}
+  /* 左手模式:摇杆和开火键左右互换 */
+  body.left-hand #joy{left:auto;right:calc(16px + env(safe-area-inset-right));}
+  body.left-hand #fire{right:auto;left:calc(20px + env(safe-area-inset-left));}
+  body.left-hand #hand{right:auto;left:calc(20px + env(safe-area-inset-left));}
+  /* 竖屏:给悬浮控件预留底部空间,棋盘不被遮挡 */
+  @media (orientation:portrait) and (pointer:coarse){
+    body{padding-bottom:calc(var(--joy) + 30px + env(safe-area-inset-bottom));}
+  }
+  /* 横屏:去标题省高度,棋盘居中,控件分列两侧空档 */
+  @media (orientation:landscape) and (pointer:coarse){
+    h1{display:none;}
+    #hud{margin-top:2px;}
+  }
   #tips{margin-top:8px;font-size:11px;color:#6f6a5e;letter-spacing:.08em;text-align:center;line-height:1.7;flex:0 0 auto;}
 </style>
 </head>
@@ -137,15 +171,19 @@
   <canvas id="game" width="520" height="520"></canvas>
   <div id="overlay">
     <div class="big" id="ovTitle">TANK BATTLE</div>
-    <div class="sub" id="ovSub">手机:棋盘上滑动移动 · 按住"开火"<br>电脑:方向键 / WASD 移动 · 空格 开火<br>守住基地 → 别让它被击毁<br>按 G 或点 HUD"生命" → 无敌模式</div>
+    <div class="sub" id="ovSub">手机:左摇杆移动 · 按住"开火"(可换手)<br>电脑:方向键 / WASD 移动 · 空格 开火<br>守住基地 → 别让它被击毁<br>按 G 或点 HUD"生命" → 无敌模式</div>
     <button id="ovBtn">开始游戏</button>
     <button id="ovBtn2" style="display:none;font-size:12px;padding:8px 14px;">从第1关开始</button>
   </div>
 </div>
 </div>
 <div id="touch">
+  <div id="joy">
+    <span class="arr up">▲</span><span class="arr down">▼</span>
+    <span class="arr left">◀</span><span class="arr right">▶</span>
+    <div id="joyKnob"></div>
+  </div>
   <button id="hand">⇄ 换手</button>
-  <span id="swipeTip">棋盘上滑动 = 移动</span>
   <button id="fire">开火</button>
 </div>
 <div id="tips">闯关模式 100 关 · 敌军随关卡更多更快 · 25 关起出现 2 血装甲坦克 · 每 5 关奖励生命 +1 · 进度自动保存</div>
@@ -342,12 +380,29 @@ function moveTank(t, dir){
   const [dx,dy] = DIRS[dir];
   const nx = clamp(t.x + dx*t.speed, 0, COLS*T - t.w);
   const ny = clamp(t.y + dy*t.speed, 0, ROWS*T - t.h);
-  const probe = {x:nx, y:ny, w:t.w, h:t.h};
-  if (tankHitsWall(nx, ny, t.w)) return false;
   const others = [player, ...enemies].filter(o => o !== t && o.alive);
-  if (others.some(o => aabb(probe, o))) return false;
-  t.x = nx; t.y = ny; t.frame++;
-  return true;
+  const free = (px, py) => !tankHitsWall(px, py, t.w) && !others.some(o => aabb({x:px, y:py, w:t.w, h:t.h}, o));
+  if (free(nx, ny)){
+    t.x = nx; t.y = ny; t.frame++;
+    return true;
+  }
+  // 贴墙对齐辅助(仅玩家):主轴被挡且离格线中心不远时,向对齐方向滑动,转弯不卡墙角
+  if (t.isPlayer){
+    const target = dy !== 0
+      ? Math.round((t.x - 3) / T) * T + 3
+      : Math.round((t.y - 3) / T) * T + 3;
+    const diff = dy !== 0 ? target - t.x : target - t.y;
+    if (diff !== 0 && Math.abs(diff) <= 14){
+      const step = clamp(diff, -t.speed, t.speed);
+      const px = dy !== 0 ? t.x + step : t.x;
+      const py = dy !== 0 ? t.y : t.y + step;
+      if (free(px, py)){
+        t.x = px; t.y = py; t.frame++;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function update(){
@@ -673,14 +728,63 @@ addEventListener('keyup', e => {
   if (k){ keys[k]=false; e.preventDefault(); }
 });
 
-// 触屏:棋盘上滑动 = 虚拟摇杆(拖尾锚点,反向拖动立即转向)
-const joyEl = document.getElementById('stage');
-const JOY_DEAD = 12, JOY_FOLLOW = 40;
-let moveTouch = null; // {id, ax, ay} 只跟踪第一根落在棋盘上的手指
+// 触屏公共:方向选择带滞回,斜向拖动不在两轴间抖动
 function setMoveDir(dir){
   keys.up = keys.down = keys.left = keys.right = false;
   if (dir) keys[dir] = true;
 }
+function curMoveDir(){
+  return keys.up ? 'up' : keys.down ? 'down' : keys.left ? 'left' : keys.right ? 'right' : null;
+}
+function pickDir(dx, dy, cur){
+  const H = 1.25, ax = Math.abs(dx), ay = Math.abs(dy);
+  if (cur === 'left' || cur === 'right') return ay > ax*H ? (dy>0?'down':'up') : (dx>0?'right':'left');
+  if (cur === 'up' || cur === 'down')    return ax > ay*H ? (dx>0?'right':'left') : (dy>0?'down':'up');
+  return ax > ay ? (dx>0?'right':'left') : (dy>0?'down':'up');
+}
+
+// 左侧固定虚拟摇杆
+const joy = document.getElementById('joy');
+const knob = document.getElementById('joyKnob');
+let joyTouch = null;
+function joyUpdate(t){
+  const r = joy.getBoundingClientRect();
+  const dx = t.clientX - (r.left + r.width/2);
+  const dy = t.clientY - (r.top + r.height/2);
+  const dist = Math.hypot(dx, dy);
+  const max = r.width * 0.31;
+  const k = dist > max ? max/dist : 1;
+  knob.style.transform = `translate(-50%,-50%) translate(${dx*k}px,${dy*k}px)`;
+  if (dist < 10) setMoveDir(null);
+  else setMoveDir(pickDir(dx, dy, curMoveDir()));
+}
+joy.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (joyTouch === null){
+    joyTouch = e.changedTouches[0].identifier;
+    joyUpdate(e.changedTouches[0]);
+  }
+}, {passive:false});
+joy.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (t.identifier === joyTouch) joyUpdate(t);
+}, {passive:false});
+const joyEnd = e => {
+  for (const t of e.changedTouches){
+    if (t.identifier === joyTouch){
+      joyTouch = null;
+      setMoveDir(null);
+      knob.style.transform = 'translate(-50%,-50%)';
+    }
+  }
+};
+joy.addEventListener('touchend', joyEnd);
+joy.addEventListener('touchcancel', joyEnd);
+
+// 棋盘上滑动 = 第二操控(拖尾锚点,与摇杆互不冲突)
+const joyEl = document.getElementById('stage');
+const JOY_DEAD = 12, JOY_FOLLOW = 40;
+let moveTouch = null; // {id, ax, ay} 只跟踪第一根落在棋盘上的手指
 joyEl.addEventListener('touchstart', e => {
   if (e.target.closest('#overlay')) return; // 弹层上的按钮照常点击
   if (moveTouch === null){
@@ -696,7 +800,7 @@ joyEl.addEventListener('touchmove', e => {
     const dx = t.clientX - moveTouch.ax, dy = t.clientY - moveTouch.ay;
     const dist = Math.hypot(dx, dy);
     if (dist > JOY_DEAD){
-      setMoveDir(Math.abs(dx) > Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up'));
+      setMoveDir(pickDir(dx, dy, curMoveDir()));
     }
     if (dist > JOY_FOLLOW){ // 锚点跟随手指
       moveTouch.ax = t.clientX - dx/dist*JOY_FOLLOW;
@@ -747,7 +851,7 @@ level = loadLv();
 lives = 3; score = 0;
 startLevel(level);
 ovTitle.textContent = 'TANK BATTLE';
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:棋盘上滑动移动 · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>每过 5 关奖励生命 +1<br>秘技:G 无敌 · L 跳关 · 点 HUD"生命"也可开无敌`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:左摇杆移动+开火(可换手) · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>每过 5 关奖励生命 +1<br>秘技:G 无敌 · L 跳关 · 点 HUD"生命"也可开无敌`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 draw();
