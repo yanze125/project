@@ -104,19 +104,22 @@
     h1{margin-bottom:4px;}
   }
   :root{--tb:clamp(44px,13vw,58px);}
-  .dpad{display:grid;grid-template-columns:repeat(3,var(--tb));grid-template-rows:repeat(3,var(--tb));gap:4px;}
-  .dpad button,#fire{
-    background:var(--panel);border:2px solid #3a3a4c;color:var(--text);
-    font-size:20px;font-family:inherit;
-    touch-action:none;
-  }
-  .dpad button:active,#fire:active{background:#2c2c3c;}
-  .dpad .blank{visibility:hidden;}
   #fire{
+    background:var(--panel);border:2px solid #5c2420;font-family:inherit;
+    touch-action:none;
     width:calc(var(--tb)*1.7);height:calc(var(--tb)*1.7);border-radius:50%;
     color:var(--red);font-weight:900;font-size:15px;letter-spacing:.15em;
-    border-color:#5c2420;
   }
+  #fire:active{background:#2c2c3c;}
+  #hand{
+    background:var(--panel);border:2px solid #3a3a4c;color:var(--steel);
+    font-family:inherit;font-size:12px;letter-spacing:.1em;
+    padding:10px 14px;
+  }
+  #hand:active{background:#2c2c3c;}
+  #swipeTip{font-size:11px;color:#6f6a5e;letter-spacing:.06em;}
+  /* 左手模式:开火键换到左侧 */
+  body.left-hand #touch{flex-direction:row-reverse;}
   #tips{margin-top:8px;font-size:11px;color:#6f6a5e;letter-spacing:.08em;text-align:center;line-height:1.7;flex:0 0 auto;}
 </style>
 </head>
@@ -134,18 +137,15 @@
   <canvas id="game" width="520" height="520"></canvas>
   <div id="overlay">
     <div class="big" id="ovTitle">TANK BATTLE</div>
-    <div class="sub" id="ovSub">方向键 / WASD 移动 · 空格 开火<br>消灭全部 15 辆敌方坦克<br>守住基地 → 别让它被击毁<br>按 G 或点 HUD"生命" → 无敌模式</div>
+    <div class="sub" id="ovSub">手机:棋盘上滑动移动 · 按住"开火"<br>电脑:方向键 / WASD 移动 · 空格 开火<br>守住基地 → 别让它被击毁<br>按 G 或点 HUD"生命" → 无敌模式</div>
     <button id="ovBtn">开始游戏</button>
     <button id="ovBtn2" style="display:none;font-size:12px;padding:8px 14px;">从第1关开始</button>
   </div>
 </div>
 </div>
 <div id="touch">
-  <div class="dpad">
-    <span class="blank"></span><button data-d="up">▲</button><span class="blank"></span>
-    <button data-d="left">◀</button><span class="blank"></span><button data-d="right">▶</button>
-    <span class="blank"></span><button data-d="down">▼</button><span class="blank"></span>
-  </div>
+  <button id="hand">⇄ 换手</button>
+  <span id="swipeTip">棋盘上滑动 = 移动</span>
   <button id="fire">开火</button>
 </div>
 <div id="tips">闯关模式 100 关 · 敌军随关卡更多更快 · 25 关起出现 2 血装甲坦克 · 每 5 关奖励生命 +1 · 进度自动保存</div>
@@ -673,18 +673,62 @@ addEventListener('keyup', e => {
   if (k){ keys[k]=false; e.preventDefault(); }
 });
 
-// 触屏
-document.querySelectorAll('.dpad button').forEach(btn => {
-  const d = btn.dataset.d;
-  const on  = e => { e.preventDefault(); keys[d]=true; };
-  const off = e => { e.preventDefault(); keys[d]=false; };
-  btn.addEventListener('touchstart', on, {passive:false});
-  btn.addEventListener('touchend', off);
-  btn.addEventListener('touchcancel', off);
-});
+// 触屏:棋盘上滑动 = 虚拟摇杆(拖尾锚点,反向拖动立即转向)
+const joyEl = document.getElementById('stage');
+const JOY_DEAD = 12, JOY_FOLLOW = 40;
+let moveTouch = null; // {id, ax, ay} 只跟踪第一根落在棋盘上的手指
+function setMoveDir(dir){
+  keys.up = keys.down = keys.left = keys.right = false;
+  if (dir) keys[dir] = true;
+}
+joyEl.addEventListener('touchstart', e => {
+  if (e.target.closest('#overlay')) return; // 弹层上的按钮照常点击
+  if (moveTouch === null){
+    const t = e.changedTouches[0];
+    moveTouch = {id: t.identifier, ax: t.clientX, ay: t.clientY};
+  }
+  e.preventDefault();
+}, {passive:false});
+joyEl.addEventListener('touchmove', e => {
+  if (moveTouch === null) return;
+  for (const t of e.changedTouches){
+    if (t.identifier !== moveTouch.id) continue;
+    const dx = t.clientX - moveTouch.ax, dy = t.clientY - moveTouch.ay;
+    const dist = Math.hypot(dx, dy);
+    if (dist > JOY_DEAD){
+      setMoveDir(Math.abs(dx) > Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up'));
+    }
+    if (dist > JOY_FOLLOW){ // 锚点跟随手指
+      moveTouch.ax = t.clientX - dx/dist*JOY_FOLLOW;
+      moveTouch.ay = t.clientY - dy/dist*JOY_FOLLOW;
+    }
+  }
+  e.preventDefault();
+}, {passive:false});
+const endMove = e => {
+  if (moveTouch === null) return;
+  for (const t of e.changedTouches){
+    if (t.identifier === moveTouch.id){ moveTouch = null; setMoveDir(null); } // 松手即停
+  }
+};
+joyEl.addEventListener('touchend', endMove);
+joyEl.addEventListener('touchcancel', endMove);
+
 const fireBtn = document.getElementById('fire');
 fireBtn.addEventListener('touchstart', e => { e.preventDefault(); keys.fire=true; }, {passive:false});
 fireBtn.addEventListener('touchend', () => keys.fire=false);
+
+// 开火键左/右手切换(记忆)
+const handBtn = document.getElementById('hand');
+function applyHand(h){ document.body.classList.toggle('left-hand', h === 'left'); }
+let hand = 'right';
+try { hand = localStorage.getItem('tank_hand') || 'right'; } catch(e){}
+applyHand(hand);
+handBtn.addEventListener('click', () => {
+  hand = hand === 'left' ? 'right' : 'left';
+  try { localStorage.setItem('tank_hand', hand); } catch(e){}
+  applyHand(hand);
+});
 
 // 移动端适配:HUD 宽度跟随棋盘,禁用长按弹菜单/双击缩放
 const stageEl = document.getElementById('stage');
@@ -703,10 +747,18 @@ level = loadLv();
 lives = 3; score = 0;
 startLevel(level);
 ovTitle.textContent = 'TANK BATTLE';
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>方向键 / WASD 移动 · 空格 开火<br>守住基地 → 消灭全部敌军即可过关<br>每过 5 关奖励生命 +1<br>秘技:G 无敌 · L 跳关 · 点 HUD"生命"也可开无敌`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:棋盘上滑动移动 · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>每过 5 关奖励生命 +1<br>秘技:G 无敌 · L 跳关 · 点 HUD"生命"也可开无敌`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 draw();
+
+// 测试钩子(只读引用,供自动化断言)
+window.__tankDebug = {
+  get player(){ return player },
+  get bullets(){ return bullets },
+  get running(){ return running },
+  keys,
+};
 })();
 </script>
 </body>
