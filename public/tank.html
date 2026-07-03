@@ -64,6 +64,7 @@
     padding:6px 10px;cursor:pointer;
   }
   .cbtn:active{background:#2c2c3c;}
+  .cbtn.on{border-color:var(--amber);color:var(--amber);}
   @media (pointer:fine){#rotBtn{display:none;}}
   /* CSS 强制横屏(iOS/不支持 orientation.lock 时):内容逆时针转90°,手机横过来拿即为正 */
   body.rot90{padding:0;}
@@ -194,6 +195,7 @@
   <span class="enemies">敌军 <b id="enemies">15</b></span>
 </div>
 <div id="ctrlBar">
+  <button class="cbtn" id="godBtn">★ 无敌</button>
   <button class="cbtn" id="sndBtn">🔊 全开</button>
   <button class="cbtn" id="bgmBtn">🎵 进行曲</button>
   <button class="cbtn" id="rotBtn">⛶ 横屏</button>
@@ -203,7 +205,7 @@
   <canvas id="game" width="520" height="520"></canvas>
   <div id="overlay">
     <div class="big" id="ovTitle">TANK BATTLE</div>
-    <div class="sub" id="ovSub">手机:左摇杆移动 · 按住"开火"(可换手)<br>电脑:方向键 / WASD 移动 · 空格 开火<br>守住基地 → 别让它被击毁<br>按 G 或点 HUD"生命" → 无敌模式</div>
+    <div class="sub" id="ovSub">手机:左摇杆移动 · 按住"开火"(可换手)<br>电脑:方向键 / WASD 移动 · 空格 开火<br>守住基地 → 别让它被击毁<br>★ 无敌默认开启 · 点「★ 无敌」按钮可关</div>
     <button id="ovBtn">开始游戏</button>
     <button id="ovBtn2" style="display:none;font-size:12px;padding:8px 14px;">从第1关开始</button>
   </div>
@@ -869,11 +871,15 @@ addEventListener('keydown', e => {
   if (e.code==='KeyL' && running){ enemiesLeft = 0; updateHud(); gameOver(true); } // 跳关秘技
   if (e.code==='Enter' && !running && !overlay.classList.contains('hidden')) ovBtn.onclick();
 });
-function toggleGod(){
-  godMode = !godMode;
-  document.getElementById('godTag').style.display = godMode ? '' : 'none';
+function setGod(on){
+  godMode = on;
+  document.getElementById('godTag').style.display = on ? '' : 'none';
+  document.getElementById('godBtn').classList.toggle('on', on);
+  try { localStorage.setItem('tank_god', on ? '1' : '0'); } catch(e){}
 }
-document.getElementById('livesWrap').addEventListener('click', toggleGod); // 触屏也能开无敌
+function toggleGod(){ setGod(!godMode); }
+document.getElementById('godBtn').addEventListener('click', function(){ toggleGod(); this.blur(); });
+document.getElementById('livesWrap').addEventListener('click', toggleGod); // 点 HUD"生命"也可切换
 addEventListener('keyup', e => {
   const k = KEYMAP[e.code];
   if (k){ keys[k]=false; e.preventDefault(); }
@@ -1078,8 +1084,9 @@ document.addEventListener('touchmove', e => { if (e.target.closest('#touch,#stag
 level = loadLv();
 lives = 3; score = 0;
 startLevel(level);
+try { setGod(localStorage.getItem('tank_god') !== '0'); } catch(e){ setGod(true); } // 无敌版:默认无敌
 ovTitle.textContent = 'TANK BATTLE';
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:左摇杆移动+开火(可换手) · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>每过 5 关奖励生命 +1<br>秘技:G 无敌 · L 跳关 · M 声音 · N 切曲`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:左摇杆移动+开火(可换手) · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>${godMode ? '★ 无敌已开启 · 点「★ 无敌」按钮可关' : '★ 无敌已关闭 · 点「★ 无敌」按钮可开'}<br>秘技:G 无敌 · L 跳关 · M 声音 · N 切曲`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 draw();
@@ -1097,6 +1104,8 @@ window.__tankDebug = {
     get playing(){ return mTimer !== null },
   },
   get rot90(){ return document.body.classList.contains('rot90') },
+  get god(){ return godMode },
+  get lives(){ return lives },
 };
 })();
 </script>
