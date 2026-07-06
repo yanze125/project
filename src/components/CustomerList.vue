@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { state, removeCustomer, touchContact, togglePin, displayName, timeAgo } from '../store/customers'
-import { dial, navigate, sms, copyText } from '../utils/actions'
+import { dial, navigate, sms, copyText, shareText, openWeixin, getMyLocation, buildMarkerLink } from '../utils/actions'
 
 defineProps({ customers: { type: Array, default: () => [] } })
 const emit = defineEmits(['edit'])
@@ -18,18 +18,21 @@ function onNavigate(c) {
 }
 
 // 短信话术选择
-const smsTarget = ref(null)
+// 注意：close-on-click-action 会先发 update:show 再发 select，
+// 所以"面板开关"和"目标客户"必须分开存，关面板不能清客户
+const showSms = ref(false)
+const smsCustomer = ref(null)
 const smsActions = computed(() =>
   [...state.settings.smsTemplates.map((t) => ({ name: t })), { name: '空白短信' }]
 )
 
 function onSms(c) {
-  smsTarget.value = c
+  smsCustomer.value = c
+  showSms.value = true
 }
 
 function onPickSms(action) {
-  const c = smsTarget.value
-  smsTarget.value = null
+  const c = smsCustomer.value
   if (!c) return
   touchContact(c.id)
   sms(c.phone, action.name === '空白短信' ? '' : action.name)
@@ -39,6 +42,53 @@ async function onCopy(c) {
   const text = [c.name, c.phone, c.address].filter(Boolean).join(' ')
   const ok = await copyText(text)
   showToast(ok ? '已复制，可粘贴到微信' : '复制失败')
+}
+
+// 微信联动面板
+const showWx = ref(false)
+const wxCustomer = ref(null)
+const WX_SEND_INFO = '发送客户信息'
+const WX_SEND_LOC = '发送我的位置'
+const WX_ADD_FRIEND = '复制号码·去微信加好友'
+
+const wxActions = computed(() => [
+  ...state.settings.smsTemplates.map((t) => ({ name: t })),
+  { name: WX_SEND_INFO },
+  { name: WX_SEND_LOC },
+  { name: WX_ADD_FRIEND, color: '#07c160' }
+])
+
+function onWx(c) {
+  wxCustomer.value = c
+  showWx.value = true
+}
+
+async function shareWithHint(text) {
+  const r = await shareText(text)
+  if (r === 'copied') showToast('已复制，去微信粘贴发送')
+  else if (r === false) showToast('分享失败')
+}
+
+async function onPickWx(action) {
+  const c = wxCustomer.value
+  if (!c) return
+  touchContact(c.id)
+  if (action.name === WX_ADD_FRIEND) {
+    await copyText(c.phone)
+    showToast('号码已复制：微信里 添加朋友→手机号→粘贴')
+    setTimeout(openWeixin, 800) // 让 toast 先被看到
+  } else if (action.name === WX_SEND_LOC) {
+    try {
+      const { lng, lat } = await getMyLocation()
+      await shareWithHint(`我的位置：${buildMarkerLink(lng, lat, '司机位置')}`)
+    } catch {
+      showToast('定位失败，请检查定位权限')
+    }
+  } else if (action.name === WX_SEND_INFO) {
+    await shareWithHint([c.name, c.phone, c.address].filter(Boolean).join(' '))
+  } else {
+    await shareWithHint(action.name)
+  }
 }
 
 function onDelete(customer) {
@@ -85,6 +135,13 @@ function onDelete(customer) {
             @click="onSms(c)"
           />
           <van-button
+            v-if="c.phone"
+            icon="wechat"
+            round
+            class="action-btn wx-btn"
+            @click="onWx(c)"
+          />
+          <van-button
             v-if="c.address"
             icon="guide-o"
             type="primary"
@@ -109,14 +166,21 @@ function onDelete(customer) {
   </div>
 
   <van-action-sheet
-    :show="!!smsTarget"
+    v-model:show="showSms"
     :actions="smsActions"
     cancel-text="取消"
     description="选择短信话术"
     close-on-click-action
     @select="onPickSms"
-    @cancel="smsTarget = null"
-    @update:show="(v) => { if (!v) smsTarget = null }"
+  />
+
+  <van-action-sheet
+    v-model:show="showWx"
+    :actions="wxActions"
+    cancel-text="取消"
+    description="微信联动：选话术分享，或加好友/发位置"
+    close-on-click-action
+    @select="onPickWx"
   />
 </template>
 
@@ -179,8 +243,12 @@ function onDelete(customer) {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
   margin-left: 12px;
+  width: 106px; /* 两列网格，最多 2x2 个按钮 */
+  flex-shrink: 0;
 }
 
 /* 开车场景：大点击区 */
@@ -206,6 +274,13 @@ function onDelete(customer) {
 .sms-btn {
   background: #00b578;
   border-color: #00b578;
+  color: #fff;
+}
+
+/* 微信按钮：微信品牌绿 */
+.wx-btn {
+  background: #07c160;
+  border-color: #07c160;
   color: #fff;
 }
 

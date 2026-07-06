@@ -260,7 +260,74 @@ try {
   const clipVal = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
   check('复制客户信息成功', copyToast && clipVal.includes('13755556666'), `clip="${clipVal}"`)
 
-  // 16. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
+  // 16. 微信联动：按钮、面板条目、发送我的位置（headless 无 share → 降级复制）
+  const wxBtn = await page.$('.card .wx-btn')
+  check('卡片渲染微信按钮', !!wxBtn)
+  await cdp2.send('Emulation.setGeolocationOverride', { latitude: 39.9042, longitude: 116.4074, accuracy: 10 })
+  await cdp2.send('Browser.grantPermissions', {
+    permissions: ['geolocation', 'clipboardReadWrite', 'clipboardSanitizedWrite'],
+    origin: 'http://localhost:4174'
+  })
+  // headless Edge 的 navigator.share 会挂起等系统分享面板，置空强制走降级复制
+  await page.evaluate(() => Object.defineProperty(navigator, 'share', { value: undefined }))
+  await wxBtn.click()
+  await new Promise((r) => setTimeout(r, 500))
+  const wxSheet = await page.evaluate(() => document.body.textContent)
+  check(
+    '微信面板含话术/发位置/加好友',
+    wxSheet.includes('师傅已到上车点') && wxSheet.includes('发送我的位置') && wxSheet.includes('去微信加好友'),
+  )
+  const geoProbe = await page.evaluate(
+    () =>
+      new Promise((res) => {
+        navigator.geolocation.getCurrentPosition(
+          (p) => res(`ok ${p.coords.longitude},${p.coords.latitude}`),
+          (e) => res(`err ${e.code} ${e.message}`),
+          { enableHighAccuracy: true, timeout: 8000 }
+        )
+      })
+  )
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) =>
+      e.textContent.includes('发送我的位置')
+    )
+    item?.click()
+  })
+  // 定位+复制是异步链路，轮询剪贴板最多 10s
+  let locClip = ''
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 500))
+    locClip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
+    if (locClip.includes('uri.amap.com/marker')) break
+  }
+  check(
+    '发送我的位置降级复制高德链接',
+    locClip.includes('uri.amap.com/marker') && locClip.includes('116.40') && locClip.includes('39.90'),
+    `clip="${locClip}" geo="${geoProbe}"`
+  )
+
+  // 17. 加好友：复制号码 + 唤起 weixin://（协议触发同 tel: 吞手势，此后全用 evaluate）
+  // 先写哨兵，确保断言读到的是本次复制而非上一步残留
+  await page.evaluate(() => navigator.clipboard.writeText('SENTINEL'))
+  await page.evaluate(() => document.querySelector('.card .wx-btn')?.click())
+  await new Promise((r) => setTimeout(r, 500))
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) =>
+      e.textContent.includes('去微信加好友')
+    )
+    item?.click()
+  })
+  // weixin:// 会在 800ms 后触发导航并让页面失焦（此后 clipboard 读取被拒），必须赶在这之前读到
+  let friendClip = ''
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 100))
+    friendClip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
+    if (friendClip === '13755556666') break
+  }
+  check('加好友已复制号码', friendClip === '13755556666', `clip="${friendClip}"`)
+  await new Promise((r) => setTimeout(r, 600)) // 让 weixin:// 触发完再进入下一段
+
+  // 18. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
   // 触发后页面手势会被吞掉（真机无此问题），其后不能再有任何交互
   await page.evaluate(() => document.querySelector('.card .van-icon-phone')?.closest('button')?.click())
   await new Promise((r) => setTimeout(r, 400))
@@ -311,6 +378,15 @@ check(
   '解析：小X称呼+固话+地址',
   p3.name === '小李' && p3.phone.replace('-', '') === '01064321234' && p3.address.includes('望京'),
   JSON.stringify(p3)
+)
+
+// 19. 高德位置链接纯函数
+const { buildMarkerLink } = await import('../src/utils/actions.js')
+const link = buildMarkerLink(116.4074, 39.9042, '司机位置')
+check(
+  '高德 marker 链接格式',
+  link === 'https://uri.amap.com/marker?position=116.407400,39.904200&name=' + encodeURIComponent('司机位置'),
+  link
 )
 
 const failed = results.filter((r) => !r.ok)

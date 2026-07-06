@@ -27,6 +27,41 @@ export async function copyText(text) {
   }
 }
 
+// 系统分享（可直接选微信好友）；不支持/被拒时降级复制
+export async function shareText(text) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ text })
+      return 'shared'
+    } catch (e) {
+      if (e.name === 'AbortError') return false // 用户取消，不再降级
+    }
+  }
+  return (await copyText(text)) ? 'copied' : false
+}
+
+// 唤起微信 App
+export function openWeixin() {
+  window.location.href = 'weixin://'
+}
+
+// 当前定位（高精度，8s 超时）
+export function getMyLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('不支持定位'))
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lng: pos.coords.longitude, lat: pos.coords.latitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  })
+}
+
+// 高德地图位置标记链接（微信里可直接点开看位置）
+export function buildMarkerLink(lng, lat, name = '我的位置') {
+  return `https://uri.amap.com/marker?position=${lng.toFixed(6)},${lat.toFixed(6)}&name=${encodeURIComponent(name)}`
+}
+
 // 一键导航：装了对应地图 App 会唤起 App，没装则打开网页版
 export function navigate(address, mapApp) {
   const kw = encodeURIComponent(address)
