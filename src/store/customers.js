@@ -27,7 +27,7 @@ function normalizeCustomer(item) {
       : null
   return {
     id: item.id || genId(),
-    name: String(item.name),
+    name: String(item.name || ''),
     phone: String(item.phone || ''),
     address: String(item.address || ''),
     note: String(item.note || ''),
@@ -110,13 +110,19 @@ export function mergeCustomers(list) {
   const existing = new Set(state.customers.map((c) => c.id))
   let added = 0
   for (const item of list) {
-    if (!item || typeof item !== 'object' || !item.name) continue
+    if (!item || typeof item !== 'object') continue
+    if (!item.name && !item.phone && !item.address) continue
     if (item.id && existing.has(item.id)) continue
     state.customers.push(normalizeCustomer(item))
     added++
   }
   if (added) persist()
   return added
+}
+
+// 空姓名时的展示兜底
+export function displayName(c) {
+  return c.name || c.phone || '未命名客户'
 }
 
 export const allTags = computed(() => [

@@ -76,14 +76,16 @@ function addTag() {
 
 function save() {
   const name = form.value.name.trim()
-  if (!name) {
-    showToast('请填写姓名或称呼')
+  const phone = form.value.phone.trim()
+  const address = form.value.address.trim()
+  if (!name && !phone && !address) {
+    showToast('请至少填写姓名、电话或地址')
     return
   }
   const data = {
     name,
-    phone: form.value.phone.trim(),
-    address: form.value.address.trim(),
+    phone,
+    address,
     note: form.value.note.trim(),
     tags: form.value.tags,
     appointment: form.value.appointment

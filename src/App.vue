@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { state, filterCustomers, allTags, saveSettings, clearAppointment } from './store/customers'
+import { state, filterCustomers, allTags, saveSettings, clearAppointment, displayName } from './store/customers'
 import { dial } from './utils/actions'
 import { applyTheme, applyFontSize } from './utils/theme'
 import CustomerList from './components/CustomerList.vue'
@@ -86,7 +86,7 @@ watch(() => state.settings.fontSize, applyFontSize)
     >
       <van-icon name="clock-o" class="appt-icon" />
       <span class="appt-time">{{ apptLabel(c.appointment.time) }}</span>
-      <span class="appt-name">{{ c.name }}</span>
+      <span class="appt-name">{{ displayName(c) }}</span>
       <span v-if="c.appointment.note" class="appt-note">{{ c.appointment.note }}</span>
       <van-button
         v-if="c.appointment.time < now"

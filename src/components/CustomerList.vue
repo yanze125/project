@@ -1,6 +1,6 @@
 <script setup>
 import { showConfirmDialog } from 'vant'
-import { state, removeCustomer, touchContact, togglePin } from '../store/customers'
+import { state, removeCustomer, touchContact, togglePin, displayName } from '../store/customers'
 import { dial, navigate } from '../utils/actions'
 
 defineProps({ customers: { type: Array, default: () => [] } })
@@ -19,7 +19,7 @@ function onNavigate(c) {
 function onDelete(customer) {
   showConfirmDialog({
     title: '删除客户',
-    message: `确定删除「${customer.name}」吗？删除后无法恢复。`,
+    message: `确定删除「${displayName(customer)}」吗？删除后无法恢复。`,
     confirmButtonText: '删除',
     confirmButtonColor: '#ee0a24'
   })
@@ -35,7 +35,7 @@ function onDelete(customer) {
         <div class="info">
           <div class="name-row">
             <van-icon v-if="c.pinned" name="star" class="pin-icon" />
-            <span class="name">{{ c.name }}</span>
+            <span class="name">{{ displayName(c) }}</span>
             <van-tag v-for="t in c.tags" :key="t" plain type="primary">{{ t }}</van-tag>
           </div>
           <div v-if="c.phone" class="phone">{{ c.phone }}</div>

@@ -62,11 +62,12 @@ export function buildVCF(customers) {
     if (c.address) noteParts.push(`地址：${c.address}`)
     if (c.note) noteParts.push(`备注：${c.note}`)
     if (c.tags?.length) noteParts.push(`标签：${c.tags.join(' ')}`)
+    const fn = c.name || c.phone // vCard 规范 FN 必填，空姓名用电话兜底
     const lines = [
       'BEGIN:VCARD',
       'VERSION:3.0',
-      `FN:${vesc(c.name)}`,
-      `N:${vesc(c.name)};;;;`,
+      `FN:${vesc(fn)}`,
+      `N:${vesc(fn)};;;;`,
       `TEL;TYPE=CELL:${vesc(c.phone)}`
     ]
     if (noteParts.length) lines.push(`NOTE:${vesc(noteParts.join('；'))}`)

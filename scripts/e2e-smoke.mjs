@@ -188,7 +188,21 @@ try {
   const apptBarText = await page.$eval('.appt-bar', (el) => el.textContent).catch(() => '')
   check('首页出现近期预约条目', apptBarText.includes('李女士'), apptBarText.trim().slice(0, 50))
 
-  // 12. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
+  // 12. 姓名非必填：只填电话可保存，卡片用电话兜底显示
+  await page.click('.add-fab')
+  await page.waitForSelector('.form-popup input', { visible: true })
+  await page.type('input[placeholder="手机号或固话"]', '13755556666')
+  await page.$$eval('.form-popup button', (btns) => btns.find((b) => b.textContent.includes('保存')).click())
+  await new Promise((r) => setTimeout(r, 500))
+  count = (await page.$$('.card')).length
+  const nameTexts = await page.$$eval('.card .name', (els) => els.map((e) => e.textContent.trim()))
+  check(
+    '无姓名仅电话可保存且以电话为标题',
+    count === 3 && nameTexts.includes('13755556666'),
+    `count=${count} names=${nameTexts.join('/')}`
+  )
+
+  // 13. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
   // 触发后页面手势会被吞掉（真机无此问题），其后不能再有任何交互
   await page.evaluate(() => document.querySelector('.card .van-icon-phone')?.closest('button')?.click())
   await new Promise((r) => setTimeout(r, 400))
@@ -209,17 +223,19 @@ try {
 const { buildVCF } = await import('../src/utils/backup.js')
 const vcf = buildVCF([
   { name: '张三', phone: '13800000001', address: '机场', note: '常客', tags: ['机场单'] },
-  { name: '无电话', phone: '', address: 'x', note: '', tags: [] }
+  { name: '无电话', phone: '', address: 'x', note: '', tags: [] },
+  { name: '', phone: '13900000002', address: '', note: '', tags: [] }
 ])
 check(
   'vCard 含 FN/TEL 且跳过无电话客户',
-  vcf.count === 1 &&
+  vcf.count === 2 &&
     vcf.skipped === 1 &&
     vcf.content.includes('FN:张三') &&
     vcf.content.includes('TEL;TYPE=CELL:13800000001') &&
     vcf.content.includes('NOTE:') &&
     !vcf.content.includes('无电话')
 )
+check('vCard 空姓名用电话作 FN', vcf.content.includes('FN:13900000002'))
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)
