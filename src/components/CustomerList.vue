@@ -1,7 +1,8 @@
 <script setup>
-import { showConfirmDialog } from 'vant'
-import { state, removeCustomer, touchContact, togglePin, displayName } from '../store/customers'
-import { dial, navigate } from '../utils/actions'
+import { ref, computed } from 'vue'
+import { showConfirmDialog, showToast } from 'vant'
+import { state, removeCustomer, touchContact, togglePin, displayName, timeAgo } from '../store/customers'
+import { dial, navigate, sms, copyText } from '../utils/actions'
 
 defineProps({ customers: { type: Array, default: () => [] } })
 const emit = defineEmits(['edit'])
@@ -14,6 +15,30 @@ function onDial(c) {
 function onNavigate(c) {
   touchContact(c.id)
   navigate(c.address, state.settings.mapApp)
+}
+
+// 短信话术选择
+const smsTarget = ref(null)
+const smsActions = computed(() =>
+  [...state.settings.smsTemplates.map((t) => ({ name: t })), { name: '空白短信' }]
+)
+
+function onSms(c) {
+  smsTarget.value = c
+}
+
+function onPickSms(action) {
+  const c = smsTarget.value
+  smsTarget.value = null
+  if (!c) return
+  touchContact(c.id)
+  sms(c.phone, action.name === '空白短信' ? '' : action.name)
+}
+
+async function onCopy(c) {
+  const text = [c.name, c.phone, c.address].filter(Boolean).join(' ')
+  const ok = await copyText(text)
+  showToast(ok ? '已复制，可粘贴到微信' : '复制失败')
 }
 
 function onDelete(customer) {
@@ -37,6 +62,7 @@ function onDelete(customer) {
             <van-icon v-if="c.pinned" name="star" class="pin-icon" />
             <span class="name">{{ displayName(c) }}</span>
             <van-tag v-for="t in c.tags" :key="t" plain type="primary">{{ t }}</van-tag>
+            <span v-if="c.lastContactAt" class="last-contact">{{ timeAgo(c.lastContactAt) }}联系过</span>
           </div>
           <div v-if="c.phone" class="phone">{{ c.phone }}</div>
           <div v-if="c.address" class="address">{{ c.address }}</div>
@@ -52,6 +78,13 @@ function onDelete(customer) {
             @click="onDial(c)"
           />
           <van-button
+            v-if="c.phone"
+            icon="chat-o"
+            round
+            class="action-btn sms-btn"
+            @click="onSms(c)"
+          />
+          <van-button
             v-if="c.address"
             icon="guide-o"
             type="primary"
@@ -62,6 +95,7 @@ function onDelete(customer) {
         </div>
       </div>
       <template #right>
+        <van-button square text="复制" class="copy-btn" @click="onCopy(c)" />
         <van-button
           square
           type="primary"
@@ -73,6 +107,17 @@ function onDelete(customer) {
       </template>
     </van-swipe-cell>
   </div>
+
+  <van-action-sheet
+    :show="!!smsTarget"
+    :actions="smsActions"
+    cancel-text="取消"
+    description="选择短信话术"
+    close-on-click-action
+    @select="onPickSms"
+    @cancel="smsTarget = null"
+    @update:show="(v) => { if (!v) smsTarget = null }"
+  />
 </template>
 
 <style scoped>
@@ -146,8 +191,27 @@ function onDelete(customer) {
 }
 
 .del-btn,
-.pin-btn {
+.pin-btn,
+.copy-btn {
   height: 100%;
+}
+
+.copy-btn {
+  background: var(--van-gray-5, #c8c9cc);
+  color: #fff;
+  border: none;
+}
+
+/* 短信按钮：与拨号区分的青绿色 */
+.sms-btn {
+  background: #00b578;
+  border-color: #00b578;
+  color: #fff;
+}
+
+.last-contact {
+  font-size: 12px;
+  color: var(--van-text-color-3, #969799);
 }
 
 .pin-icon {

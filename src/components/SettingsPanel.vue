@@ -48,6 +48,23 @@ function onMapChange() {
   saveSettings()
 }
 
+// 短信话术增删
+const newTpl = ref('')
+
+function addTpl() {
+  const t = newTpl.value.trim()
+  if (!t) return
+  if (state.settings.smsTemplates.includes(t)) return showToast('已有相同话术')
+  state.settings.smsTemplates.push(t)
+  saveSettings()
+  newTpl.value = ''
+}
+
+function removeTpl(i) {
+  state.settings.smsTemplates.splice(i, 1)
+  saveSettings()
+}
+
 // 相对路径，本地与 Pages 子路径部署都可达
 function openTank() {
   window.open('./tank.html')
@@ -131,6 +148,19 @@ async function onClearAll() {
       </van-cell>
     </van-cell-group>
 
+    <van-cell-group inset title="短信话术（点客户卡片短信按钮时可选）">
+      <van-cell v-for="(t, i) in state.settings.smsTemplates" :key="i" :title="t">
+        <template #right-icon>
+          <van-icon name="cross" class="tpl-del" @click="removeTpl(i)" />
+        </template>
+      </van-cell>
+      <van-field v-model="newTpl" placeholder="输入新话术后点添加" clearable>
+        <template #button>
+          <van-button size="small" type="primary" plain @click="addTpl">添加</van-button>
+        </template>
+      </van-field>
+    </van-cell-group>
+
     <van-cell-group inset title="数据备份">
       <van-cell title="导出 JSON 备份" is-link icon="down" @click="onExportJSON" />
       <van-cell title="导出 CSV（Excel 可打开）" is-link icon="description" @click="onExportCSV" />
@@ -181,6 +211,12 @@ async function onClearAll() {
 .opt-btns .van-button {
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.tpl-del {
+  color: var(--van-text-color-3, #969799);
+  font-size: 16px;
+  padding: 4px;
 }
 
 .danger-cell :deep(.van-cell__title),

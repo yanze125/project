@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { showToast } from 'vant'
 import { addCustomer, updateCustomer, allTags } from '../store/customers'
+import { parseCustomerText } from '../utils/parse'
 
 const props = defineProps({
   show: Boolean,
@@ -59,6 +60,42 @@ function clearAppt() {
   form.value.appointment = null
 }
 
+// 智能粘贴识别：读剪贴板失败(权限/内核)时降级为手动粘贴框
+const showPasteBox = ref(false)
+const pasteText = ref('')
+
+async function onSmartPaste() {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (!text || !text.trim()) {
+      showPasteBox.value = true
+      return
+    }
+    applyParsed(text)
+  } catch {
+    showPasteBox.value = true
+  }
+}
+
+function applyParsed(text) {
+  const r = parseCustomerText(text)
+  if (!r.phone && !r.name && !r.address) {
+    showToast('没有识别到电话/姓名/地址')
+    return
+  }
+  if (r.name) form.value.name = r.name
+  if (r.phone) form.value.phone = r.phone
+  if (r.address) form.value.address = r.address
+  if (r.note) form.value.note = r.note
+  showToast('已识别填入，请核对')
+}
+
+function onManualParse() {
+  showPasteBox.value = false
+  applyParsed(pasteText.value)
+  pasteText.value = ''
+}
+
 const tagOptions = computed(() => [
   ...new Set([...allTags.value, ...form.value.tags])
 ])
@@ -110,6 +147,12 @@ function save() {
     @update:show="emit('update:show', $event)"
   >
     <div class="form-title">{{ customer ? '编辑客户' : '新增客户' }}</div>
+    <div v-if="!customer" class="paste-row">
+      <van-button size="small" plain type="primary" icon="description" @click="onSmartPaste">
+        粘贴识别
+      </van-button>
+      <span class="paste-tip">复制微信里的客户信息后点这里自动填表</span>
+    </div>
     <van-form @submit="save">
       <van-cell-group inset>
         <van-field
@@ -193,6 +236,20 @@ function save() {
       </div>
     </van-form>
 
+    <van-popup v-model:show="showPasteBox" position="bottom" round teleport="body" class="paste-popup">
+      <div class="form-title">粘贴客户信息</div>
+      <van-field
+        v-model="pasteText"
+        type="textarea"
+        rows="4"
+        autosize
+        placeholder="长按此处粘贴，如：张先生 13812345678 明早6点到首都机场T3"
+      />
+      <div class="form-footer">
+        <van-button round block type="primary" @click="onManualParse">识别并填入</van-button>
+      </div>
+    </van-popup>
+
     <van-popup v-model:show="showApptPicker" position="bottom" round teleport="body">
       <van-picker-group
         title="预约时间"
@@ -217,6 +274,22 @@ function save() {
   font-size: 17px;
   font-weight: 600;
   text-align: center;
+}
+
+.paste-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+
+.paste-tip {
+  font-size: 12px;
+  color: var(--van-text-color-3, #969799);
+}
+
+.paste-popup {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .tag-select {

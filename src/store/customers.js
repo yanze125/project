@@ -40,6 +40,12 @@ function normalizeCustomer(item) {
   }
 }
 
+export const DEFAULT_SMS_TEMPLATES = [
+  '师傅已到上车点，看到请出发',
+  '距您还有约5分钟，请提前准备',
+  '已到附近，具体位置发我一下'
+]
+
 export const state = reactive({
   customers: load(STORAGE_KEY, []).map(normalizeCustomer),
   settings: {
@@ -47,6 +53,7 @@ export const state = reactive({
     sortBy: 'recent',
     theme: 'light',
     fontSize: 'normal',
+    smsTemplates: DEFAULT_SMS_TEMPLATES,
     ...load(SETTINGS_KEY, {})
   }
 })
@@ -123,6 +130,16 @@ export function mergeCustomers(list) {
 // 空姓名时的展示兜底
 export function displayName(c) {
   return c.name || c.phone || '未命名客户'
+}
+
+// 相对时间：卡片"x前联系过"徽标
+export function timeAgo(ts) {
+  if (typeof ts !== 'number') return ''
+  const diff = Date.now() - ts
+  if (diff < 60 * 1000) return '刚刚'
+  if (diff < 3600 * 1000) return `${Math.floor(diff / 60000)}分钟前`
+  if (diff < 24 * 3600 * 1000) return `${Math.floor(diff / 3600000)}小时前`
+  return `${Math.floor(diff / 86400000)}天前`
 }
 
 export const allTags = computed(() => [

@@ -103,7 +103,7 @@ try {
   const panelText = await page.evaluate(() => document.body.textContent)
   check(
     '设置面板包含导出/导入/地图选项',
-    ['导出 JSON 备份', '导出 CSV', '导入 JSON 备份', '高德地图', '百度地图', '坦克大战'].every((t) => panelText.includes(t))
+    ['导出 JSON 备份', '导出 CSV', '导入 JSON 备份', '高德地图', '百度地图', '坦克大战', '短信话术'].every((t) => panelText.includes(t))
   )
 
   // 8. 外观：深色/字号切换（设置面板此时仍开着）
@@ -213,7 +213,54 @@ try {
     `count=${count} names=${nameTexts.join('/')}`
   )
 
-  // 13. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
+  // 13. 短信按钮与话术面板（取消关闭，不触发 sms: 协议）
+  const smsBtn = await page.$('.card .sms-btn')
+  check('卡片渲染短信按钮', !!smsBtn)
+  await smsBtn.click()
+  await new Promise((r) => setTimeout(r, 500))
+  const sheetText = await page.evaluate(() => document.body.textContent)
+  check('短信话术面板含默认话术', sheetText.includes('师傅已到上车点') && sheetText.includes('空白短信'))
+  await page.evaluate(() => document.querySelector('.van-action-sheet__cancel')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+
+  // 14. 智能粘贴识别：授权剪贴板 → 写入样例 → 点识别 → 表单被填充
+  const cdp2 = await page.createCDPSession()
+  await cdp2.send('Browser.grantPermissions', {
+    permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+    origin: 'http://localhost:4174'
+  })
+  await page.evaluate(() => navigator.clipboard.writeText('王师傅 138 5555 0000 明早去虹桥机场T2'))
+  await page.click('.add-fab')
+  await page.waitForSelector('.form-popup input', { visible: true })
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.form-popup button')].find((b) => b.textContent.includes('粘贴识别'))
+    b?.click()
+  })
+  await new Promise((r) => setTimeout(r, 500))
+  const parsed = await page.evaluate(() => ({
+    name: document.querySelector('input[placeholder="可选，如：张先生"]')?.value,
+    phone: document.querySelector('input[placeholder="手机号或固话"]')?.value,
+    address: document.querySelector('textarea[placeholder="常用上车点或目的地"]')?.value
+  }))
+  check(
+    '粘贴识别自动填表',
+    parsed.name === '王师傅' && parsed.phone === '13855550000' && (parsed.address || '').includes('虹桥机场'),
+    JSON.stringify(parsed)
+  )
+  await page.evaluate(() => document.querySelector('.form-popup .van-popup__close-icon')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+
+  // 15. 复制客户信息
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.van-swipe-cell button')].find((b) => b.textContent.includes('复制'))
+    btn?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  const copyToast = await page.evaluate(() => document.body.textContent.includes('已复制'))
+  const clipVal = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
+  check('复制客户信息成功', copyToast && clipVal.includes('13755556666'), `clip="${clipVal}"`)
+
+  // 16. 拨号记录最近联系时间——必须放浏览器断言最后：headless 中 tel: 协议
   // 触发后页面手势会被吞掉（真机无此问题），其后不能再有任何交互
   await page.evaluate(() => document.querySelector('.card .van-icon-phone')?.closest('button')?.click())
   await new Promise((r) => setTimeout(r, 400))
@@ -221,7 +268,8 @@ try {
     const list = JSON.parse(localStorage.getItem('taxi-contacts:customers') || '[]')
     return list.some((c) => typeof c.lastContactAt === 'number')
   })
-  check('拨号后写入 lastContactAt', touched)
+  const lastBadge = await page.evaluate(() => document.querySelector('.last-contact')?.textContent || '')
+  check('拨号后写入 lastContactAt 且卡片显示联系徽标', touched && lastBadge.includes('联系过'), lastBadge)
 
   // 13. 最终截图
   await page.screenshot({ path: 'C:\\Users\\10982\\AppData\\Local\\Temp\\taxi-final.png' })
@@ -247,6 +295,23 @@ check(
     !vcf.content.includes('无电话')
 )
 check('vCard 空姓名用电话作 FN', vcf.content.includes('FN:13900000002'))
+
+// 17. 粘贴识别纯函数直测
+const { parseCustomerText } = await import('../src/utils/parse.js')
+const p1 = parseCustomerText('张先生 13812345678 明天早上到首都机场T3')
+check(
+  '解析：称呼+手机号+地址',
+  p1.name === '张先生' && p1.phone === '13812345678' && p1.address.includes('机场'),
+  JSON.stringify(p1)
+)
+const p2 = parseCustomerText('139 1111 2222')
+check('解析：纯手机号(带空格)', p2.phone === '13911112222' && !p2.name, JSON.stringify(p2))
+const p3 = parseCustomerText('小李 010-64321234，朝阳区望京SOHO T1栋')
+check(
+  '解析：小X称呼+固话+地址',
+  p3.name === '小李' && p3.phone.replace('-', '') === '01064321234' && p3.address.includes('望京'),
+  JSON.stringify(p3)
+)
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)
