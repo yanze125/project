@@ -78,8 +78,8 @@ function save() {
   const name = form.value.name.trim()
   const phone = form.value.phone.trim()
   const address = form.value.address.trim()
-  if (!name && !phone && !address) {
-    showToast('请至少填写姓名、电话或地址')
+  if (!phone) {
+    showToast('请填写电话')
     return
   }
   const data = {
@@ -115,13 +115,14 @@ function save() {
         <van-field
           v-model="form.name"
           label="姓名"
-          placeholder="姓名或称呼，如：张先生"
+          placeholder="可选，如：张先生"
           clearable
         />
         <van-field
           v-model="form.phone"
           label="电话"
           type="tel"
+          required
           placeholder="手机号或固话"
           clearable
         />

@@ -33,7 +33,7 @@ try {
   // 2. 新增一位客户
   await fab.click()
   await page.waitForSelector('.form-popup input', { visible: true })
-  await page.type('input[placeholder="姓名或称呼，如：张先生"]', '张先生')
+  await page.type('input[placeholder="可选，如：张先生"]', '张先生')
   await page.type('input[placeholder="手机号或固话"]', '13800001234')
   await page.type('textarea[placeholder="常用上车点或目的地"]', '首都机场T3航站楼')
   await page.type('input[placeholder="输入新标签后点添加"]', '机场单')
@@ -58,9 +58,9 @@ try {
   await page.waitForSelector('.van-overlay', { hidden: true, timeout: 5000 })
   await page.click('.add-fab')
   await page.waitForSelector('.form-popup input', { visible: true })
-  const nameVal = await page.$eval('input[placeholder="姓名或称呼，如：张先生"]', (el) => el.value)
+  const nameVal = await page.$eval('input[placeholder="可选，如：张先生"]', (el) => el.value)
   check('再次打开表单已清空', nameVal === '', `value="${nameVal}"`)
-  await page.type('input[placeholder="姓名或称呼，如：张先生"]', '李女士')
+  await page.type('input[placeholder="可选，如：张先生"]', '李女士')
   await page.type('input[placeholder="手机号或固话"]', '13911112222')
   await page.$$eval('.form-popup button', (btns) => btns.find((b) => b.textContent.includes('保存')).click())
   await new Promise((r) => setTimeout(r, 500))
@@ -188,9 +188,20 @@ try {
   const apptBarText = await page.$eval('.appt-bar', (el) => el.textContent).catch(() => '')
   check('首页出现近期预约条目', apptBarText.includes('李女士'), apptBarText.trim().slice(0, 50))
 
-  // 12. 姓名非必填：只填电话可保存，卡片用电话兜底显示
+  // 12. 仅电话必填：只填姓名被拦截；只填电话可保存，卡片用电话兜底显示
   await page.click('.add-fab')
   await page.waitForSelector('.form-popup input', { visible: true })
+  await page.type('input[placeholder="可选，如：张先生"]', '王师傅')
+  await page.$$eval('.form-popup button', (btns) => btns.find((b) => b.textContent.includes('保存')).click())
+  await new Promise((r) => setTimeout(r, 500))
+  const blockToast = await page.evaluate(() => document.body.textContent.includes('请填写电话'))
+  count = (await page.$$('.card')).length
+  check('不填电话被拦截并提示', blockToast && count === 2, `toast=${blockToast} count=${count}`)
+  // 清掉姓名，补电话再存
+  await page.$eval('input[placeholder="可选，如：张先生"]', (el) => {
+    el.value = ''
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
   await page.type('input[placeholder="手机号或固话"]', '13755556666')
   await page.$$eval('.form-popup button', (btns) => btns.find((b) => b.textContent.includes('保存')).click())
   await new Promise((r) => setTimeout(r, 500))
