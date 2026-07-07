@@ -25,6 +25,15 @@ export default defineConfig({
             type: 'image/svg+xml',
             purpose: 'any'
           }
+        ],
+        // 安卓长按桌面图标的快捷动作
+        shortcuts: [
+          {
+            name: '新增客户',
+            short_name: '新增',
+            url: './?action=add',
+            icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' }]
+          }
         ]
       }
     })

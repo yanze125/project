@@ -78,9 +78,18 @@ export function updateCustomer(id, data) {
   persist()
 }
 
+// 返回被删客户与原位置，供"撤销"恢复
 export function removeCustomer(id) {
   const i = state.customers.findIndex((c) => c.id === id)
-  if (i >= 0) state.customers.splice(i, 1)
+  if (i < 0) return null
+  const [customer] = state.customers.splice(i, 1)
+  persist()
+  return { customer, index: i }
+}
+
+export function restoreCustomer(customer, index) {
+  const i = Math.min(Math.max(index, 0), state.customers.length)
+  state.customers.splice(i, 0, customer)
   persist()
 }
 

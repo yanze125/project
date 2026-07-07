@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { state, filterCustomers, allTags, saveSettings, clearAppointment, displayName } from './store/customers'
+import { state, filterCustomers, allTags, saveSettings, clearAppointment, displayName, touchContact } from './store/customers'
 import { dial } from './utils/actions'
 import { applyTheme, applyFontSize } from './utils/theme'
 import CustomerList from './components/CustomerList.vue'
@@ -51,6 +51,19 @@ function apptLabel(time) {
   return `${sameDay ? '今天' : '明天'} ${hm}`
 }
 
+// 最近联系快捷条：联系过的前 5 位，一点回拨
+const recentContacts = computed(() =>
+  state.customers
+    .filter((c) => c.lastContactAt && c.phone)
+    .sort((a, b) => b.lastContactAt - a.lastContactAt)
+    .slice(0, 5)
+)
+
+function onQuickDial(c) {
+  touchContact(c.id)
+  dial(c.phone)
+}
+
 function onAdd() {
   editing.value = null
   showForm.value = true
@@ -64,6 +77,11 @@ function onEdit(customer) {
 onMounted(() => {
   applyTheme(state.settings.theme)
   applyFontSize(state.settings.fontSize)
+  // 安卓长按图标"新增客户"快捷方式入口
+  if (new URLSearchParams(location.search).get('action') === 'add') {
+    history.replaceState(null, '', location.pathname)
+    onAdd()
+  }
 })
 watch(() => state.settings.theme, applyTheme)
 watch(() => state.settings.fontSize, applyFontSize)
@@ -108,6 +126,14 @@ watch(() => state.settings.fontSize, applyFontSize)
     </div>
   </div>
 
+  <div v-if="recentContacts.length" class="recent-bar">
+    <span class="recent-label">最近</span>
+    <button v-for="c in recentContacts" :key="c.id" class="recent-chip" @click="onQuickDial(c)">
+      <van-icon name="phone" />
+      {{ displayName(c) }}
+    </button>
+  </div>
+
   <div class="search-row">
     <van-search v-model="keyword" class="search-input" placeholder="搜索姓名 / 电话 / 地址" clearable />
     <van-icon name="filter-o" class="sort-btn" :title="sortLabel" @click="showSort = true" />
@@ -126,7 +152,7 @@ watch(() => state.settings.fontSize, applyFontSize)
     </van-tag>
   </div>
 
-  <CustomerList :customers="list" @edit="onEdit" />
+  <CustomerList :customers="list" :grouped="state.settings.sortBy === 'name' && !keyword && !activeTag" @edit="onEdit" />
 
   <van-empty
     v-if="!list.length"
@@ -263,6 +289,41 @@ html.font-xlarge #app {
 .appt-note + .appt-clear,
 .appt-note + .appt-dial {
   margin-left: 0;
+}
+
+.recent-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.recent-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--van-text-color-3, #969799);
+}
+
+.recent-chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  border-radius: 16px;
+  border: 1px solid #07c16033;
+  background: #07c16014;
+  color: #0a9f56;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.van-theme-dark .recent-chip {
+  background: #0a3d24;
+  color: #4bd88a;
+  border-color: #14663c;
 }
 
 .tag-bar {

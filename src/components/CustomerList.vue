@@ -1,11 +1,29 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { showConfirmDialog, showToast } from 'vant'
-import { state, removeCustomer, touchContact, togglePin, displayName, timeAgo } from '../store/customers'
+import { showToast } from 'vant'
+import { state, removeCustomer, restoreCustomer, touchContact, togglePin, displayName, timeAgo } from '../store/customers'
+import { firstLetter } from '../utils/pinyin'
 import { dial, navigate, sms, copyText, shareText, openWeixin, getMyLocation, buildMarkerLink } from '../utils/actions'
 
-defineProps({ customers: { type: Array, default: () => [] } })
+const props = defineProps({
+  customers: { type: Array, default: () => [] },
+  // 按姓名排序时启用拼音首字母分组 + 右侧索引条
+  grouped: { type: Boolean, default: false }
+})
 const emit = defineEmits(['edit'])
+
+const groups = computed(() => {
+  if (!props.grouped) return [{ letter: '', items: props.customers }]
+  const map = new Map()
+  for (const c of props.customers) {
+    const l = firstLetter(displayName(c))
+    if (!map.has(l)) map.set(l, [])
+    map.get(l).push(c)
+  }
+  return [...map.entries()].map(([letter, items]) => ({ letter, items }))
+})
+
+const letters = computed(() => groups.value.map((g) => g.letter))
 
 function onDial(c) {
   touchContact(c.id)
@@ -91,21 +109,35 @@ async function onPickWx(action) {
   }
 }
 
+// 删除免确认，5 秒内可撤销；连续删除时后删覆盖先删
+const lastDeleted = ref(null)
+let undoTimer = null
+
 function onDelete(customer) {
-  showConfirmDialog({
-    title: '删除客户',
-    message: `确定删除「${displayName(customer)}」吗？删除后无法恢复。`,
-    confirmButtonText: '删除',
-    confirmButtonColor: '#ee0a24'
-  })
-    .then(() => removeCustomer(customer.id))
-    .catch(() => {})
+  const removed = removeCustomer(customer.id)
+  if (!removed) return
+  clearTimeout(undoTimer)
+  lastDeleted.value = removed
+  undoTimer = setTimeout(() => (lastDeleted.value = null), 5000)
+}
+
+function onUndo() {
+  clearTimeout(undoTimer)
+  if (lastDeleted.value) restoreCustomer(lastDeleted.value.customer, lastDeleted.value.index)
+  lastDeleted.value = null
 }
 </script>
 
 <template>
-  <div class="list">
-    <van-swipe-cell v-for="c in customers" :key="c.id">
+  <component
+    :is="grouped ? 'van-index-bar' : 'div'"
+    class="list"
+    :index-list="grouped ? letters : undefined"
+    :sticky="false"
+  >
+    <template v-for="g in groups" :key="g.letter || 'all'">
+      <van-index-anchor v-if="grouped" :index="g.letter" />
+      <van-swipe-cell v-for="c in g.items" :key="c.id">
       <div class="card" @click="emit('edit', c)">
         <div class="info">
           <div class="name-row">
@@ -163,6 +195,12 @@ function onDelete(customer) {
         <van-button square type="danger" text="删除" class="del-btn" @click="onDelete(c)" />
       </template>
     </van-swipe-cell>
+    </template>
+  </component>
+
+  <div v-if="lastDeleted" class="undo-bar">
+    <span class="undo-text">已删除「{{ displayName(lastDeleted.customer) }}」</span>
+    <van-button size="small" plain type="primary" class="undo-btn" @click="onUndo">撤销</van-button>
   </div>
 
   <van-action-sheet
@@ -287,6 +325,35 @@ function onDelete(customer) {
 .last-contact {
   font-size: 12px;
   color: var(--van-text-color-3, #969799);
+}
+
+.undo-bar {
+  position: fixed;
+  left: 16px;
+  right: 92px; /* 避开右下角新增按钮 */
+  bottom: calc(32px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(50, 50, 60, 0.95);
+  color: #fff;
+  font-size: 14px;
+  z-index: 120;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.undo-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undo-btn {
+  flex-shrink: 0;
+  background: transparent;
 }
 
 .pin-icon {

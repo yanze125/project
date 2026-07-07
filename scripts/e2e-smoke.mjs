@@ -260,6 +260,73 @@ try {
   const clipVal = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
   check('复制客户信息成功', copyToast && clipVal.includes('13755556666'), `clip="${clipVal}"`)
 
+  // 15a. 删除可撤销：删第一张 → 撤销条出现 → 点撤销恢复原位
+  const firstCardName = await page.$eval('.card .name', (el) => el.textContent.trim())
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.van-swipe-cell button')].find((b) => b.textContent.trim() === '删除')
+    btn?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  count = (await page.$$('.card')).length
+  const undoBar = await page.evaluate(() => document.querySelector('.undo-bar')?.textContent || '')
+  check('删除后卡片消失且撤销条出现', count === 2 && undoBar.includes('已删除'), `count=${count} bar="${undoBar.trim()}"`)
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.undo-bar button')].find((b) => b.textContent.includes('撤销'))
+    btn?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  count = (await page.$$('.card')).length
+  const restoredFirst = await page.$eval('.card .name', (el) => el.textContent.trim())
+  check('撤销后恢复原位', count === 3 && restoredFirst === firstCardName, `count=${count} first=${restoredFirst}`)
+
+  // 15b. 最近联系快捷条：seed 一条 lastContactAt → 刷新出现 chip
+  await page.evaluate(() => {
+    const list = JSON.parse(localStorage.getItem('taxi-contacts:customers'))
+    const li = list.find((c) => c.name === '李女士')
+    li.lastContactAt = Date.now() - 3600 * 1000
+    localStorage.setItem('taxi-contacts:customers', JSON.stringify(list))
+  })
+  await page.reload({ waitUntil: 'networkidle0' })
+  await new Promise((r) => setTimeout(r, 500))
+  const chipText = await page.evaluate(() => document.querySelector('.recent-bar')?.textContent || '')
+  check('最近联系条出现且含客户名', chipText.includes('最近') && chipText.includes('李女士'), chipText.trim())
+
+  // 15c. 姓名排序 → 拼音首字母索引条
+  await page.click('.sort-btn')
+  await new Promise((r) => setTimeout(r, 400))
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) => e.textContent.includes('按姓名排序'))
+    item?.click()
+  })
+  await new Promise((r) => setTimeout(r, 500))
+  const sidebar = await page.evaluate(() => document.querySelector('.van-index-bar__sidebar')?.textContent || '')
+  const anchors = await page.$$eval('.van-index-anchor', (els) => els.map((e) => e.textContent.trim()))
+  check(
+    '姓名排序出现字母索引条(#/L/Z)',
+    sidebar.includes('L') && sidebar.includes('Z') && anchors.includes('#'),
+    `sidebar=${sidebar} anchors=${anchors.join(',')}`
+  )
+  // 切回最近联系排序，后续断言不受分组影响
+  await page.click('.sort-btn')
+  await new Promise((r) => setTimeout(r, 400))
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) => e.textContent.includes('最近联系优先'))
+    item?.click()
+  })
+  await new Promise((r) => setTimeout(r, 400))
+
+  // 15d. 快捷方式入口：?action=add 自动打开新增表单
+  await page.goto('http://localhost:4174/?action=add', { waitUntil: 'networkidle0' })
+  await new Promise((r) => setTimeout(r, 600))
+  const autoForm = await page.evaluate(() => ({
+    formOpen: !!document.querySelector('.form-popup input'),
+    title: [...document.querySelectorAll('.form-title')].map((e) => e.textContent)[0] || '',
+    urlClean: !location.search
+  }))
+  check('action=add 自动弹新增表单且清参数', autoForm.formOpen && autoForm.title.includes('新增') && autoForm.urlClean, JSON.stringify(autoForm))
+  await page.evaluate(() => document.querySelector('.form-popup .van-popup__close-icon')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+
   // 16. 微信联动：按钮、面板条目、发送我的位置（headless 无 share → 降级复制）
   const wxBtn = await page.$('.card .wx-btn')
   check('卡片渲染微信按钮', !!wxBtn)
@@ -379,6 +446,22 @@ check(
   p3.name === '小李' && p3.phone.replace('-', '') === '01064321234' && p3.address.includes('望京'),
   JSON.stringify(p3)
 )
+
+// 18b. 拼音首字母纯函数
+const { firstLetter } = await import('../src/utils/pinyin.js')
+const pinyinCases = [['张三', 'Z'], ['李女士', 'L'], ['阿宝', 'A'], ['Amy', 'A'], ['138001', '#']]
+check(
+  '拼音首字母边界表',
+  pinyinCases.every(([s, l]) => firstLetter(s) === l),
+  pinyinCases.map(([s, l]) => `${s}:${firstLetter(s)}/${l}`).join(' ')
+)
+
+// 18c. manifest 含快捷方式
+const { readFileSync } = await import('node:fs')
+const { fileURLToPath } = await import('node:url')
+const manifestPath = fileURLToPath(new globalThis.URL('../dist/manifest.webmanifest', import.meta.url))
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+check('manifest 含新增客户快捷方式', manifest.shortcuts?.[0]?.url === './?action=add', JSON.stringify(manifest.shortcuts))
 
 // 19. 高德位置链接纯函数
 const { buildMarkerLink } = await import('../src/utils/actions.js')
