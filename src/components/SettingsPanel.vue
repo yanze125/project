@@ -111,6 +111,10 @@ function openTank() {
   window.open('./tank.html')
 }
 
+function openPlane() {
+  window.open('./plane.html')
+}
+
 // 清空不可恢复，双重确认防误触
 async function onClearAll() {
   if (!state.customers.length) return showToast('暂无数据')
@@ -235,6 +239,7 @@ async function onClearAll() {
 
     <van-cell-group inset title="休息一下">
       <van-cell title="🎮 坦克大战（无敌版）" is-link @click="openTank" />
+      <van-cell title="✈️ 雷霆战机（无敌版）" is-link @click="openPlane" />
     </van-cell-group>
 
     <van-cell-group inset title="数据清理">

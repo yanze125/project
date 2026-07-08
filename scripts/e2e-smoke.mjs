@@ -103,7 +103,7 @@ try {
   const panelText = await page.evaluate(() => document.body.textContent)
   check(
     '设置面板包含导出/导入/地图选项',
-    ['导出 JSON 备份', '导出 CSV', '导入 JSON 备份', '高德地图', '百度地图', '坦克大战', '短信话术'].every((t) => panelText.includes(t))
+    ['导出 JSON 备份', '导出 CSV', '导入 JSON 备份', '高德地图', '百度地图', '坦克大战', '雷霆战机', '短信话术'].every((t) => panelText.includes(t))
   )
 
   // 8. 外观：深色/字号切换（设置面板此时仍开着）
