@@ -3,11 +3,52 @@ import { ref } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import { state, saveSettings, mergeCustomers, clearCustomers } from '../store/customers'
 import { exportJSON, exportCSV, exportVCF, readJSONFile } from '../utils/backup'
+import { pushWecom, isValidWebhook } from '../utils/wecom'
+import DriverCard from './DriverCard.vue'
 
 defineProps({ show: Boolean })
 const emit = defineEmits(['update:show'])
 
 const fileInput = ref(null)
+const showCard = ref(false)
+
+// 安卓 Chrome 支持从系统通讯录选人导入
+const canPickContacts = typeof navigator !== 'undefined' && !!navigator.contacts?.select
+
+async function onPickContacts() {
+  try {
+    const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true })
+    const list = picked.map((p) => ({
+      name: (p.name || [])[0] || '',
+      phone: ((p.tel || [])[0] || '').replace(/[\s-]/g, '')
+    }))
+    const added = mergeCustomers(list)
+    showToast(added ? `已导入 ${added} 位客户` : '没有新增客户')
+  } catch {
+    /* 用户取消 */
+  }
+}
+
+// 企微群机器人
+async function onTestWecom() {
+  const url = state.settings.wecomWebhook.trim()
+  if (!isValidWebhook(url)) return showToast('请粘贴完整的企微群机器人 Webhook 地址')
+  saveSettings()
+  const r = await pushWecom(url, '【客户速记】测试消息：机器人配置成功 ✅')
+  if (r === 'ok') showToast('发送成功，去群里看看')
+  else if (r === 'blind') showToast('已发送，请到群里确认是否收到')
+  else showToast('发送失败，请检查 Webhook 地址')
+}
+
+function onWebhookBlur() {
+  saveSettings()
+}
+
+function onShowCard() {
+  if (!state.settings.driverPhone.trim()) return showToast('先填写你的电话')
+  saveSettings()
+  showCard.value = true
+}
 
 function onExportJSON() {
   if (!state.customers.length) return showToast('暂无数据可导出')
@@ -148,6 +189,23 @@ async function onClearAll() {
       </van-cell>
     </van-cell-group>
 
+    <van-cell-group inset title="我的名片（乘客扫码存你的电话）">
+      <van-field v-model="state.settings.driverName" label="姓名" placeholder="如：王师傅" clearable @blur="saveSettings" />
+      <van-field v-model="state.settings.driverPhone" label="电话" type="tel" placeholder="你的手机号" clearable @blur="saveSettings" />
+      <van-cell title="展示二维码名片" is-link icon="qr" @click="onShowCard" />
+    </van-cell-group>
+
+    <van-cell-group inset title="企微群机器人（客户/预约一键推群）">
+      <van-field
+        v-model="state.settings.wecomWebhook"
+        label="Webhook"
+        placeholder="粘贴群机器人 Webhook 地址"
+        clearable
+        @blur="onWebhookBlur"
+      />
+      <van-cell title="发送测试消息" is-link icon="guide-o" @click="onTestWecom" />
+    </van-cell-group>
+
     <van-cell-group inset title="短信话术（点客户卡片短信按钮时可选）">
       <van-cell v-for="(t, i) in state.settings.smsTemplates" :key="i" :title="t">
         <template #right-icon>
@@ -166,6 +224,13 @@ async function onClearAll() {
       <van-cell title="导出 CSV（Excel 可打开）" is-link icon="description" @click="onExportCSV" />
       <van-cell title="导出到手机通讯录 (.vcf)" is-link icon="contact-o" @click="onExportVCF" />
       <van-cell title="导入 JSON 备份" is-link icon="upgrade" @click="fileInput.click()" />
+      <van-cell
+        v-if="canPickContacts"
+        title="从手机通讯录导入"
+        is-link
+        icon="contact-o"
+        @click="onPickContacts"
+      />
     </van-cell-group>
 
     <van-cell-group inset title="休息一下">
@@ -190,6 +255,12 @@ async function onClearAll() {
       accept=".json,application/json"
       style="display: none"
       @change="onImportFile"
+    />
+
+    <DriverCard
+      v-model:show="showCard"
+      :name="state.settings.driverName"
+      :phone="state.settings.driverPhone"
     />
   </van-popup>
 </template>

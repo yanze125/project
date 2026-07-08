@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { showToast } from 'vant'
-import { addCustomer, updateCustomer, allTags } from '../store/customers'
+import { addCustomer, updateCustomer, allTags, displayName } from '../store/customers'
 import { parseCustomerText } from '../utils/parse'
+import { exportSingleVCF } from '../utils/backup'
 
 const props = defineProps({
   show: Boolean,
@@ -94,6 +95,13 @@ function onManualParse() {
   showPasteBox.value = false
   applyParsed(pasteText.value)
   pasteText.value = ''
+}
+
+// 下载单条 vCard，手机打开即存入系统通讯录
+function onSaveToContacts() {
+  if (!props.customer?.phone) return
+  exportSingleVCF(props.customer, displayName(props.customer))
+  showToast('已生成名片文件，打开后即可存入通讯录')
 }
 
 const tagOptions = computed(() => [
@@ -233,6 +241,18 @@ function save() {
       </van-cell-group>
       <div class="form-footer">
         <van-button round block type="primary" native-type="submit">保存</van-button>
+        <van-button
+          v-if="customer && customer.phone"
+          round
+          block
+          plain
+          type="primary"
+          icon="contact-o"
+          class="save-contact-btn"
+          @click.prevent="onSaveToContacts"
+        >
+          存入手机通讯录
+        </van-button>
       </div>
     </van-form>
 
@@ -307,5 +327,9 @@ function save() {
 
 .form-footer {
   padding: 16px;
+}
+
+.save-contact-btn {
+  margin-top: 10px;
 }
 </style>

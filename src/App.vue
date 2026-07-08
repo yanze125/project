@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { state, filterCustomers, allTags, saveSettings, clearAppointment, displayName, touchContact } from './store/customers'
 import { dial } from './utils/actions'
+import { pushWecom, isValidWebhook } from './utils/wecom'
+import { showToast } from 'vant'
 import { applyTheme, applyFontSize } from './utils/theme'
 import CustomerList from './components/CustomerList.vue'
 import CustomerForm from './components/CustomerForm.vue'
@@ -40,6 +42,19 @@ const upcoming = computed(() =>
     .filter((c) => c.appointment && c.appointment.time < now.value + 24 * 3600 * 1000)
     .sort((a, b) => a.appointment.time - b.appointment.time)
 )
+
+// 预约早报：汇总近期预约一键推企微群
+async function onPushDaily() {
+  const webhook = state.settings.wecomWebhook?.trim()
+  if (!isValidWebhook(webhook)) return showToast('先到 设置→企微群机器人 里配置 Webhook')
+  const lines = upcoming.value.map(
+    (c) => `${apptLabel(c.appointment.time)} ${displayName(c)} ${c.phone || ''} ${c.appointment.note || ''}`.trim()
+  )
+  const r = await pushWecom(webhook, `【今日预约】共 ${lines.length} 条\n` + lines.join('\n'))
+  if (r === 'ok') showToast('早报已推送')
+  else if (r === 'blind') showToast('已发送，请到群里确认')
+  else showToast('推送失败，请检查 Webhook')
+}
 
 function apptLabel(time) {
   const d = new Date(time)
@@ -95,6 +110,10 @@ watch(() => state.settings.fontSize, applyFontSize)
   </van-nav-bar>
 
   <div v-if="upcoming.length" class="appt-bar">
+    <div class="appt-head">
+      <span class="appt-head-title">近期预约</span>
+      <van-button size="mini" plain type="primary" class="daily-push-btn" @click="onPushDaily">推早报</van-button>
+    </div>
     <div
       v-for="c in upcoming"
       :key="c.id"
@@ -223,6 +242,22 @@ html.font-xlarge #app {
 
 .appt-bar {
   padding: 8px 12px 0;
+}
+
+.appt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.appt-head-title {
+  font-size: 13px;
+  color: var(--van-text-color-3, #969799);
+}
+
+.daily-push-btn {
+  height: 24px;
 }
 
 .appt-item {

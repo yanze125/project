@@ -327,6 +327,100 @@ try {
   await page.evaluate(() => document.querySelector('.form-popup .van-popup__close-icon')?.click())
   await new Promise((r) => setTimeout(r, 400))
 
+  // 15e. 企微推送：拦截 qyapi mock 成功响应，断言请求体
+  let wecomBody = ''
+  await page.setRequestInterception(true)
+  page.on('request', (req) => {
+    if (req.url().includes('qyapi.weixin.qq.com')) {
+      if (req.method() === 'OPTIONS') {
+        req.respond({
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'content-type',
+            'Access-Control-Allow-Methods': 'POST'
+          }
+        })
+        return
+      }
+      wecomBody = req.postData() || ''
+      req.respond({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: '{"errcode":0,"errmsg":"ok"}'
+      })
+      return
+    }
+    req.continue()
+  })
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('taxi-contacts:settings') || '{}')
+    s.wecomWebhook = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-key'
+    s.driverName = '王师傅'
+    s.driverPhone = '13900001111'
+    localStorage.setItem('taxi-contacts:settings', JSON.stringify(s))
+  })
+  await page.reload({ waitUntil: 'networkidle0' })
+  await new Promise((r) => setTimeout(r, 500))
+
+  await page.evaluate(() => document.querySelector('.card .wx-btn')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.van-action-sheet__item')].find((e) =>
+      e.textContent.includes('推送到企微群')
+    )
+    item?.click()
+  })
+  await new Promise((r) => setTimeout(r, 800))
+  const pushToast = await page.evaluate(() => document.body.textContent)
+  check(
+    '客户推送到企微群且请求体含电话',
+    wecomBody.includes('13755556666') && /已推送|已发送/.test(pushToast),
+    `body=${wecomBody.slice(0, 80)}`
+  )
+
+  // 15f. 预约早报推送
+  wecomBody = ''
+  await page.evaluate(() => document.querySelector('.daily-push-btn')?.click())
+  await new Promise((r) => setTimeout(r, 800))
+  check('早报推送请求体含预约与客户', wecomBody.includes('预约') && wecomBody.includes('李女士'), wecomBody.slice(0, 80))
+
+  // 15g. 名片二维码 + 通讯录入口
+  await page.click('.van-nav-bar__right .van-icon-setting-o')
+  await new Promise((r) => setTimeout(r, 500))
+  const settingsText = await page.evaluate(() => document.body.textContent)
+  check(
+    '设置含企微/名片分组，headless 隐藏通讯录导入',
+    settingsText.includes('企微群机器人') && settingsText.includes('我的名片') && !settingsText.includes('从手机通讯录导入')
+  )
+  await page.evaluate(() => {
+    const cell = [...document.querySelectorAll('.van-cell')].find((e) => e.textContent.includes('展示二维码名片'))
+    cell?.click()
+  })
+  await new Promise((r) => setTimeout(r, 500))
+  const cardInfo = await page.evaluate(() => ({
+    svg: !!document.querySelector('.card-popup svg, .qr-box svg'),
+    name: document.body.textContent.includes('王师傅'),
+    phone: document.body.textContent.includes('13900001111')
+  }))
+  check('名片弹层渲染二维码与姓名电话', cardInfo.svg && cardInfo.name && cardInfo.phone, JSON.stringify(cardInfo))
+  // 关名片、关设置
+  await page.evaluate(() => {
+    document.querySelectorAll('.van-popup__close-icon').forEach((i) => i.click())
+  })
+  await new Promise((r) => setTimeout(r, 500))
+
+  // 15h. 编辑表单"存入手机通讯录"按钮
+  await page.evaluate(() => document.querySelector('.card')?.click())
+  await new Promise((r) => setTimeout(r, 500))
+  const saveContactBtn = await page.evaluate(() =>
+    [...document.querySelectorAll('.form-popup button')].some((b) => b.textContent.includes('存入手机通讯录'))
+  )
+  check('编辑表单含存入通讯录按钮', saveContactBtn)
+  await page.evaluate(() => document.querySelector('.form-popup .van-popup__close-icon')?.click())
+  await new Promise((r) => setTimeout(r, 400))
+
   // 16. 微信联动：按钮、面板条目、发送我的位置（headless 无 share → 降级复制）
   const wxBtn = await page.$('.card .wx-btn')
   check('卡片渲染微信按钮', !!wxBtn)
@@ -462,6 +556,21 @@ const { fileURLToPath } = await import('node:url')
 const manifestPath = fileURLToPath(new globalThis.URL('../dist/manifest.webmanifest', import.meta.url))
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
 check('manifest 含新增客户快捷方式', manifest.shortcuts?.[0]?.url === './?action=add', JSON.stringify(manifest.shortcuts))
+
+// 18b. 企微 webhook 校验 + 名片 vCard 纯函数
+const { isValidWebhook } = await import('../src/utils/wecom.js')
+check(
+  'webhook 校验：企微地址通过、其它拒绝',
+  isValidWebhook('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x') &&
+    !isValidWebhook('https://evil.com/webhook') &&
+    !isValidWebhook('')
+)
+const { buildNameCardText } = await import('../src/utils/backup.js')
+const card = buildNameCardText('王师傅', '13900001111')
+check(
+  '名片 vCard 文本含 FN/TEL',
+  card.includes('FN:王师傅') && card.includes('TEL;TYPE=CELL:13900001111') && card.startsWith('BEGIN:VCARD'),
+)
 
 // 19. 高德位置链接纯函数
 const { buildMarkerLink } = await import('../src/utils/actions.js')

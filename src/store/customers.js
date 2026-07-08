@@ -54,6 +54,9 @@ export const state = reactive({
     theme: 'light',
     fontSize: 'normal',
     smsTemplates: DEFAULT_SMS_TEMPLATES,
+    wecomWebhook: '',
+    driverName: '',
+    driverPhone: '',
     ...load(SETTINGS_KEY, {})
   }
 })

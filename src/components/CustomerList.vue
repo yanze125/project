@@ -4,6 +4,7 @@ import { showToast } from 'vant'
 import { state, removeCustomer, restoreCustomer, touchContact, togglePin, displayName, timeAgo } from '../store/customers'
 import { firstLetter } from '../utils/pinyin'
 import { dial, navigate, sms, copyText, shareText, openWeixin, getMyLocation, buildMarkerLink } from '../utils/actions'
+import { pushWecom, isValidWebhook } from '../utils/wecom'
 
 const props = defineProps({
   customers: { type: Array, default: () => [] },
@@ -68,11 +69,13 @@ const wxCustomer = ref(null)
 const WX_SEND_INFO = '发送客户信息'
 const WX_SEND_LOC = '发送我的位置'
 const WX_ADD_FRIEND = '复制号码·去微信加好友'
+const WX_PUSH_WECOM = '推送到企微群'
 
 const wxActions = computed(() => [
   ...state.settings.smsTemplates.map((t) => ({ name: t })),
   { name: WX_SEND_INFO },
   { name: WX_SEND_LOC },
+  { name: WX_PUSH_WECOM, color: '#1989fa' },
   { name: WX_ADD_FRIEND, color: '#07c160' }
 ])
 
@@ -102,6 +105,17 @@ async function onPickWx(action) {
     } catch {
       showToast('定位失败，请检查定位权限')
     }
+  } else if (action.name === WX_PUSH_WECOM) {
+    const webhook = state.settings.wecomWebhook?.trim()
+    if (!isValidWebhook(webhook)) {
+      showToast('先到 设置→企微群机器人 里配置 Webhook')
+      return
+    }
+    const text = ['【客户】' + displayName(c), c.phone, c.address, c.note].filter(Boolean).join('\n')
+    const r = await pushWecom(webhook, text)
+    if (r === 'ok') showToast('已推送到企微群')
+    else if (r === 'blind') showToast('已发送，请到群里确认')
+    else showToast('推送失败，请检查 Webhook')
   } else if (action.name === WX_SEND_INFO) {
     await shareWithHint([c.name, c.phone, c.address].filter(Boolean).join(' '))
   } else {

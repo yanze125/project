@@ -83,6 +83,25 @@ export function exportVCF(customers) {
   return { count, skipped }
 }
 
+// 单个客户存入手机通讯录
+export function exportSingleVCF(customer, filename) {
+  const { content, count } = buildVCF([customer])
+  if (count) download(`${filename}.vcf`, content, 'text/vcard;charset=utf-8')
+  return count > 0
+}
+
+// 司机名片 vCard 文本（供二维码内容，扫码直接弹"添加联系人"）
+export function buildNameCardText(name, phone) {
+  return [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${vesc(name)}`,
+    `N:${vesc(name)};;;;`,
+    `TEL;TYPE=CELL:${vesc(phone)}`,
+    'END:VCARD'
+  ].join('\r\n')
+}
+
 export function readJSONFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
