@@ -113,6 +113,7 @@
   <span style="color:#8ab4ff">关 <b id="level">1</b></span>
   <span class="lives">命 <b id="lives">3</b></span>
   <span id="godTag" style="color:var(--amber);display:none;">★</span>
+  <span id="wpn" style="color:#4a9df0"></span>
   <span class="score">分 <b id="score">0</b></span>
   <span class="enemies">敌 <b id="enemies">0</b></span>
 </div>
@@ -131,7 +132,7 @@
   </div>
 </div>
 </div>
-<div id="tips">手机:按住屏幕拖动(手指不用压着飞机) · 电脑:方向键/WASD · 自动开火 · G 无敌 · L 跳关</div>
+<div id="tips">手机:按住屏幕拖动(手指不用压着飞机) · 电脑:方向键/WASD · 自动开火 · 道具:W火力 L激光 S散弹 M导弹 A装甲 · G 无敌 · L 跳关</div>
 
 <script>
 (() => {
@@ -141,7 +142,7 @@ const CTX = CVS.getContext('2d');
 const W = CVS.width, H = CVS.height;
 const MAX_LEVEL = 100;
 
-let player, enemies, bullets, ebullets, drops, particles, stars, boss;
+let player, enemies, bullets, ebullets, drops, particles, stars, boss, missiles;
 let keys = {}, lives, score, level = 1, kills, killTarget, spawnTimer, running = false, frame = 0;
 let godMode = true, best = 0;
 
@@ -259,7 +260,8 @@ document.addEventListener('visibilitychange', () => {
 
 /* ---------- 实体 ---------- */
 function makePlayer(){
-  return { x: W/2-16, y: H-90, w: 32, h: 36, speed: 4.2, cooldown: 0, double: 0, invincible: 90, alive: true };
+  return { x: W/2-16, y: H-90, w: 32, h: 36, speed: 4.2, cooldown: 0, invincible: 90, alive: true,
+    weapon: 'gun', wlv: 1, missiles: false, armor: 0 };
 }
 function spawnEnemy(){
   const r = Math.random();
@@ -288,17 +290,34 @@ function boom(x, y, big){
       color: Math.random()<.5 ? '#ffb300' : (Math.random()<.5?'#e5483c':'#fff') });
   }
 }
+// 道具掉落表：W火力 L激光 S散弹 M导弹 A装甲 +1加命
+const DROP_KINDS = [['power',30],['laser',18],['spread',18],['missile',14],['armor',12],['life',8]];
+const DROP_STYLE = {
+  power:  ['W', '#4a9df0'],
+  laser:  ['L', '#00e5ff'],
+  spread: ['S', '#ffb300'],
+  missile:['M', '#b06ae0'],
+  armor:  ['A', '#9aa3ad'],
+  life:   ['+1', '#3fca5a']
+};
 function dropPower(x, y){
-  if (Math.random() > 0.09) return;
-  const life = Math.random() < 0.25;
-  drops.push({ x, y, w:22, h:22, vy:1.6, kind: life ? 'life' : 'double' });
+  if (Math.random() > 0.14) return;
+  let r = Math.random() * DROP_KINDS.reduce((s, k) => s + k[1], 0);
+  let kind = 'power';
+  for (const [k, w] of DROP_KINDS){ if ((r -= w) < 0){ kind = k; break; } }
+  drops.push({ x, y, w:22, h:22, vy:1.6, kind });
 }
 
 /* ---------- 初始化 ---------- */
-function startLevel(lv){
+function startLevel(lv, carry = true){
   level = lv; cfg = levelConfig(lv);
+  const prev = player;
   player = makePlayer();
-  enemies = []; bullets = []; ebullets = []; drops = []; particles = []; boss = null;
+  if (carry && prev){ // 过关保留武器/副武器/装甲
+    player.weapon = prev.weapon; player.wlv = prev.wlv;
+    player.missiles = prev.missiles; player.armor = prev.armor;
+  }
+  enemies = []; bullets = []; ebullets = []; drops = []; particles = []; missiles = []; boss = null;
   kills = 0; killTarget = cfg.killTarget;
   spawnTimer = 30; frame = 0;
   if (cfg.isBoss) spawnBoss();
@@ -310,6 +329,7 @@ function initStars(){
     s: Math.random()*1.6 + 0.4, v: Math.random()*1.4 + 0.4
   }));
 }
+const WPN_NAME = { gun: '炮', laser: '激光', spread: '散弹' };
 function updateHud(){
   document.getElementById('level').textContent = level;
   document.getElementById('lives').textContent = lives;
@@ -317,29 +337,68 @@ function updateHud(){
   document.getElementById('enemies').textContent = cfg.isBoss
     ? (boss ? boss.hp : 0)
     : Math.max(0, killTarget - kills);
+  document.getElementById('wpn').textContent =
+    `${WPN_NAME[player.weapon]}${player.wlv}` +
+    (player.missiles ? '+弹' : '') +
+    (player.armor ? ` 盾${player.armor}` : '');
 }
 
 /* ---------- 更新 ---------- */
 function shoot(){
   if (player.cooldown > 0) return;
   const cx = player.x + player.w/2;
-  if (player.double > 0) {
-    bullets.push({ x: cx-12, y: player.y-6, w:5, h:12, vy:-9 });
-    bullets.push({ x: cx+7, y: player.y-6, w:5, h:12, vy:-9 });
+  const y0 = player.y - 8;
+  if (player.weapon === 'laser'){
+    // 激光炮：贯穿光束，一发打穿一列
+    bullets.push({ x: cx - (2 + player.wlv), y: y0 - 16, w: 4 + player.wlv*2, h: 28, vx: 0, vy: -13,
+      dmg: 1 + player.wlv, pierce: true, hits: new Set(), kind: 'laser' });
+    player.cooldown = 10;
+  } else if (player.weapon === 'spread'){
+    // 散弹：3/5/7 向扇形
+    const n = 1 + player.wlv * 2;
+    for (let i = 0; i < n; i++){
+      const a = -Math.PI/2 + (i - (n-1)/2) * 0.16;
+      bullets.push({ x: cx-2.5, y: y0, w: 5, h: 10, vx: Math.cos(a)*8, vy: Math.sin(a)*8, dmg: 1, kind: 'spread' });
+    }
+    player.cooldown = 12;
   } else {
-    bullets.push({ x: cx-2.5, y: player.y-8, w:5, h:12, vy:-9 });
+    // 机炮：1/2/3 发平行弹
+    for (let i = 0; i < player.wlv; i++){
+      const off = (i - (player.wlv-1)/2) * 11;
+      bullets.push({ x: cx-2.5 + off, y: y0, w: 5, h: 12, vx: 0, vy: -9, dmg: 1, kind: 'gun' });
+    }
+    player.cooldown = 9;
   }
-  player.cooldown = 9;
   sfx.shoot();
 }
 function hitPlayer(){
   if (godMode || player.invincible > 0) return;
+  if (player.armor > 0){ // 装甲优先抵挡
+    player.armor--;
+    player.invincible = 60;
+    boom(player.x+player.w/2, player.y+player.h/2, false);
+    sfx.hit();
+    updateHud();
+    return;
+  }
   lives--; updateHud();
   boom(player.x+player.w/2, player.y+player.h/2, true);
   sfx.boom();
   if (lives <= 0) { player.alive = false; gameOver(false); }
   else { player.x = W/2-16; player.y = H-90; player.invincible = 120; }
 }
+function damageBoss(dmg, x, y){
+  if (!boss) return;
+  boss.hp -= dmg;
+  boom(x, y, false);
+  updateHud();
+  if (boss.hp <= 0){
+    score += 2000; boom(boss.x+boss.w/2, boss.y+boss.h/2, true); sfx.boom();
+    boss = null; updateHud();
+    gameOver(true);
+  }
+}
+
 function killEnemy(e){
   e.hp = 0;
   kills++; score += e.score;
@@ -359,7 +418,6 @@ function update(){
   if (player.alive){
     if (player.invincible > 0) player.invincible--;
     if (player.cooldown > 0) player.cooldown--;
-    if (player.double > 0) player.double--;
     let dx = 0, dy = 0;
     if (keys.left) dx -= 1;
     if (keys.right) dx += 1;
@@ -416,28 +474,56 @@ function update(){
     if (player.alive && aabb(boss, player)) hitPlayer();
   }
 
-  // 我方子弹
-  for (const b of bullets){
-    b.y += b.vy;
+  // 副武器：追踪导弹（每 0.8 秒双发）
+  if (player.alive && player.missiles && frame % 48 === 0){
+    missiles.push({ x: player.x-5, y: player.y+8, w:6, h:12, vx:-1.2, vy:-2, dmg:3 });
+    missiles.push({ x: player.x+player.w-1, y: player.y+8, w:6, h:12, vx:1.2, vy:-2, dmg:3 });
+  }
+  for (const m of missiles){
+    const targets = boss && !boss.entering ? [...enemies, boss] : enemies;
+    let near = null, nd = 1e9;
+    for (const t of targets){
+      const d = Math.hypot(t.x+t.w/2 - m.x, t.y+t.h/2 - m.y);
+      if (d < nd){ nd = d; near = t; }
+    }
+    if (near){
+      const dx = near.x+near.w/2 - m.x, dy = near.y+near.h/2 - m.y;
+      const d = Math.hypot(dx, dy) || 1;
+      m.vx += dx/d * 0.55; m.vy += dy/d * 0.55;
+      const sp = Math.hypot(m.vx, m.vy);
+      if (sp > 6.5){ m.vx = m.vx/sp*6.5; m.vy = m.vy/sp*6.5; }
+    } else { m.vy -= 0.3; }
+    m.x += m.vx; m.y += m.vy;
+    if (frame % 3 === 0) particles.push({ x: m.x+2, y: m.y+10, dx: 0, dy: 1.2, life: 8, color: '#ffb300' });
     for (const e of enemies){
-      if (e.hp > 0 && aabb(b, e)){
-        b.dead = true; e.hp--;
-        if (e.hp <= 0) killEnemy(e); else { boom(b.x, b.y, false); sfx.hit(); }
+      if (e.hp > 0 && aabb(m, e)){
+        m.dead = true; e.hp -= m.dmg;
+        if (e.hp <= 0) killEnemy(e); else { boom(m.x, m.y, false); sfx.hit(); }
         break;
       }
     }
-    if (!b.dead && boss && !boss.entering && aabb(b, boss)){
-      b.dead = true; boss.hp--;
-      boom(b.x, b.y, false);
-      updateHud();
-      if (boss.hp <= 0){
-        score += 2000; boom(boss.x+boss.w/2, boss.y+boss.h/2, true); sfx.boom();
-        boss = null; updateHud();
-        gameOver(true);
+    if (!m.dead && boss && !boss.entering && aabb(m, boss)){ m.dead = true; damageBoss(m.dmg, m.x, m.y); }
+  }
+  missiles = missiles.filter((m) => !m.dead && m.y > -30 && m.y < H+30 && m.x > -30 && m.x < W+30);
+
+  // 我方子弹（激光贯穿：一发可伤同列多个目标各一次）
+  for (const b of bullets){
+    b.x += b.vx || 0; b.y += b.vy;
+    for (const e of enemies){
+      if (e.hp <= 0 || (b.hits && b.hits.has(e))) continue;
+      if (aabb(b, e)){
+        e.hp -= b.dmg;
+        if (b.pierce) b.hits.add(e); else b.dead = true;
+        if (e.hp <= 0) killEnemy(e); else { boom(b.x, b.y, false); sfx.hit(); }
+        if (!b.pierce) break;
       }
     }
+    if (!b.dead && boss && !boss.entering && !(b.hits && b.hits.has(boss)) && aabb(b, boss)){
+      if (b.pierce) b.hits.add(boss); else b.dead = true;
+      damageBoss(b.dmg, b.x, b.y);
+    }
   }
-  bullets = bullets.filter((b) => !b.dead && b.y > -20);
+  bullets = bullets.filter((b) => !b.dead && b.y > -34 && b.x > -20 && b.x < W+20);
 
   // 敌方子弹
   for (const b of ebullets){
@@ -455,8 +541,15 @@ function update(){
     d.y += d.vy;
     if (player.alive && aabb(d, player)){
       d.dead = true; sfx.power();
-      if (d.kind === 'life') { lives = Math.min(9, lives+1); }
-      else { player.double = 60 * 15; }
+      if (d.kind === 'life') lives = Math.min(9, lives+1);
+      else if (d.kind === 'armor') player.armor = Math.min(3, player.armor+1);
+      else if (d.kind === 'missile') player.missiles = true;
+      else if (d.kind === 'laser' || d.kind === 'spread'){
+        // 同武器再吃升级，换武器从 1 级起
+        if (player.weapon === d.kind) player.wlv = Math.min(3, player.wlv+1);
+        else { player.weapon = d.kind; player.wlv = 1; }
+      }
+      else player.wlv = Math.min(3, player.wlv+1) // power：强化当前武器
       updateHud();
     }
   }
@@ -502,9 +595,18 @@ function draw(){
       CTX.strokeStyle = '#fff'; CTX.lineWidth = 2;
       CTX.strokeRect(player.x-3, player.y-3, player.w+6, player.h+6);
     }
-    drawShip(player.x, player.y, player.w, player.h,
-      player.double > 0 ? '#4a9df0' : '#3fca5a',
-      player.double > 0 ? '#1c5fa8' : '#1e7a33', false);
+    drawShip(player.x, player.y, player.w, player.h, '#3fca5a', '#1e7a33', false);
+    if (player.armor > 0){ // 装甲护盾环
+      CTX.strokeStyle = '#33d9ff';
+      CTX.globalAlpha = 0.5 + Math.sin(frame/5) * 0.2;
+      for (let i = 0; i < player.armor; i++){
+        CTX.lineWidth = 2;
+        CTX.beginPath();
+        CTX.arc(player.x+player.w/2, player.y+player.h/2, 26 + i*5, 0, Math.PI*2);
+        CTX.stroke();
+      }
+      CTX.globalAlpha = 1;
+    }
     if (godMode){
       CTX.strokeStyle = '#ffb300'; CTX.lineWidth = 2;
       const pad = 4 + Math.sin(frame/6)*1.5;
@@ -528,17 +630,34 @@ function draw(){
     CTX.strokeStyle = '#555'; CTX.strokeRect(20, 8, W-40, 8);
   }
 
-  CTX.fillStyle = '#8ef0a0';
-  for (const b of bullets) CTX.fillRect(b.x, b.y, b.w, b.h);
+  for (const b of bullets){
+    if (b.kind === 'laser'){ // 激光：亮芯+光晕
+      CTX.fillStyle = 'rgba(0,229,255,.35)';
+      CTX.fillRect(b.x-3, b.y-3, b.w+6, b.h+6);
+      CTX.fillStyle = '#aef7ff';
+      CTX.fillRect(b.x, b.y, b.w, b.h);
+    } else {
+      CTX.fillStyle = b.kind === 'spread' ? '#ffd76e' : '#8ef0a0';
+      CTX.fillRect(b.x, b.y, b.w, b.h);
+    }
+  }
+  // 导弹
+  for (const m of missiles){
+    CTX.fillStyle = '#b06ae0';
+    CTX.fillRect(m.x, m.y, m.w, m.h);
+    CTX.fillStyle = '#ffb300';
+    CTX.fillRect(m.x+1, m.y+m.h, m.w-2, 4);
+  }
   CTX.fillStyle = '#ff8a80';
   for (const b of ebullets) CTX.fillRect(b.x, b.y, b.w, b.h);
 
   for (const d of drops){
-    CTX.fillStyle = d.kind === 'life' ? '#3fca5a' : '#4a9df0';
+    const [label, color] = DROP_STYLE[d.kind] || ['?', '#fff'];
+    CTX.fillStyle = color;
     CTX.fillRect(d.x, d.y, d.w, d.h);
-    CTX.fillStyle = '#fff';
-    CTX.font = 'bold 14px monospace'; CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
-    CTX.fillText(d.kind === 'life' ? '+1' : 'W', d.x+d.w/2, d.y+d.h/2+1);
+    CTX.fillStyle = '#000';
+    CTX.font = 'bold 13px monospace'; CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
+    CTX.fillText(label, d.x+d.w/2, d.y+d.h/2+1);
   }
 
   for (const p of particles){
@@ -573,7 +692,7 @@ function beginRun(){
   loop();
 }
 ovBtn.onclick = beginRun;
-ovBtn2.onclick = () => { store.set('plane_lv', 1); lives = 3; score = 0; startLevel(1); beginRun(); };
+ovBtn2.onclick = () => { store.set('plane_lv', 1); lives = 3; score = 0; startLevel(1, false); beginRun(); };
 
 function saveBest(){
   if (score > best){ best = score; store.set('plane_best', best); }
@@ -589,7 +708,7 @@ function gameOver(win){
       ovTitle.className = 'big win';
       ovSub.innerHTML = `100 关雷霆征途结束<br>最终得分 <b style="color:var(--amber)">${score}</b> · 最高分 ${best}`;
       ovBtn.textContent = '重新开始';
-      ovBtn.onclick = () => { store.set('plane_lv', 1); lives=3; score=0; startLevel(1); beginRun(); };
+      ovBtn.onclick = () => { store.set('plane_lv', 1); lives=3; score=0; startLevel(1, false); beginRun(); };
     } else if (win){
       const bonus = level % 5 === 0;
       if (bonus) lives = Math.min(9, lives+1);
@@ -606,7 +725,7 @@ function gameOver(win){
       ovTitle.className = 'big lose';
       ovSub.innerHTML = `倒在第 <b style="color:var(--amber)">${level}</b> 关 · 得分 ${score} · 最高分 ${best}`;
       ovBtn.textContent = '重玩本关';
-      ovBtn.onclick = () => { lives = 3; startLevel(level); beginRun(); };
+      ovBtn.onclick = () => { lives = 3; startLevel(level, false); beginRun(); };
     }
     overlay.classList.remove('hidden');
   }, 700);
@@ -700,7 +819,7 @@ applySnd();
 lives = 3; score = 0;
 initStars();
 startLevel(level);
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD<br>自动开火 · 吃 W 双发 · 吃 +1 加命<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光炮 S散弹 M追踪导弹 A装甲 +1加命<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 syncHud();
@@ -712,6 +831,8 @@ window.__planeDebug = {
   get enemies(){ return enemies },
   get bullets(){ return bullets },
   get ebullets(){ return ebullets },
+  get missiles(){ return missiles },
+  get drops(){ return drops },
   get boss(){ return boss },
   get running(){ return running },
   get god(){ return godMode },
