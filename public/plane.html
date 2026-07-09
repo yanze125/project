@@ -132,7 +132,7 @@
   </div>
 </div>
 </div>
-<div id="tips">手机:按住屏幕拖动(手指不用压着飞机) · 电脑:方向键/WASD · 自动开火 · 道具:W火力 L激光 S散弹 M导弹 A装甲 · G 无敌 · L 跳关</div>
+<div id="tips">手机:按住屏幕拖动(手指不用压着飞机) · 电脑:方向键/WASD · 自动开火 · 道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 · G 无敌 · L 跳关</div>
 
 <script>
 (() => {
@@ -261,7 +261,7 @@ document.addEventListener('visibilitychange', () => {
 /* ---------- 实体 ---------- */
 function makePlayer(){
   return { x: W/2-16, y: H-90, w: 32, h: 36, speed: 4.2, cooldown: 0, invincible: 90, alive: true,
-    weapon: 'gun', wlv: 1, missiles: false, armor: 0 };
+    weapon: 'gun', wlv: 1, missiles: false, armor: 0, rage: 0 };
 }
 function spawnEnemy(){
   const r = Math.random();
@@ -291,15 +291,17 @@ function boom(x, y, big){
   }
 }
 // 道具掉落表：W火力 L激光 S散弹 M导弹 A装甲 +1加命
-const DROP_KINDS = [['power',30],['laser',18],['spread',18],['missile',14],['armor',12],['life',8]];
+const DROP_KINDS = [['power',26],['laser',16],['spread',16],['missile',13],['armor',11],['rage',10],['life',8]];
 const DROP_STYLE = {
   power:  ['W', '#4a9df0'],
   laser:  ['L', '#00e5ff'],
   spread: ['S', '#ffb300'],
   missile:['M', '#b06ae0'],
   armor:  ['A', '#9aa3ad'],
+  rage:   ['暴', '#e5483c'],
   life:   ['+1', '#3fca5a']
 };
+const RAGE_FRAMES = 60 * 8; // 暴走持续 8 秒
 function dropPower(x, y){
   if (Math.random() > 0.14) return;
   let r = Math.random() * DROP_KINDS.reduce((s, k) => s + k[1], 0);
@@ -337,10 +339,13 @@ function updateHud(){
   document.getElementById('enemies').textContent = cfg.isBoss
     ? (boss ? boss.hp : 0)
     : Math.max(0, killTarget - kills);
-  document.getElementById('wpn').textContent =
+  const wpnEl = document.getElementById('wpn');
+  wpnEl.textContent =
     `${WPN_NAME[player.weapon]}${player.wlv}` +
     (player.missiles ? '+弹' : '') +
-    (player.armor ? ` 盾${player.armor}` : '');
+    (player.armor ? ` 盾${player.armor}` : '') +
+    (player.rage > 0 ? ` 暴走${Math.ceil(player.rage/60)}` : '');
+  wpnEl.style.color = player.rage > 0 ? '#e5483c' : '#4a9df0';
 }
 
 /* ---------- 更新 ---------- */
@@ -348,26 +353,28 @@ function shoot(){
   if (player.cooldown > 0) return;
   const cx = player.x + player.w/2;
   const y0 = player.y - 8;
+  const raging = player.rage > 0; // 暴走：射速翻倍、伤害+1
+  const boost = raging ? 1 : 0;
   if (player.weapon === 'laser'){
     // 激光炮：贯穿光束，一发打穿一列
     bullets.push({ x: cx - (2 + player.wlv), y: y0 - 16, w: 4 + player.wlv*2, h: 28, vx: 0, vy: -13,
-      dmg: 1 + player.wlv, pierce: true, hits: new Set(), kind: 'laser' });
-    player.cooldown = 10;
+      dmg: 1 + player.wlv + boost, pierce: true, hits: new Set(), kind: 'laser' });
+    player.cooldown = raging ? 5 : 10;
   } else if (player.weapon === 'spread'){
     // 散弹：3/5/7 向扇形
     const n = 1 + player.wlv * 2;
     for (let i = 0; i < n; i++){
       const a = -Math.PI/2 + (i - (n-1)/2) * 0.16;
-      bullets.push({ x: cx-2.5, y: y0, w: 5, h: 10, vx: Math.cos(a)*8, vy: Math.sin(a)*8, dmg: 1, kind: 'spread' });
+      bullets.push({ x: cx-2.5, y: y0, w: 5, h: 10, vx: Math.cos(a)*8, vy: Math.sin(a)*8, dmg: 1 + boost, kind: 'spread' });
     }
-    player.cooldown = 12;
+    player.cooldown = raging ? 6 : 12;
   } else {
     // 机炮：1/2/3 发平行弹
     for (let i = 0; i < player.wlv; i++){
       const off = (i - (player.wlv-1)/2) * 11;
-      bullets.push({ x: cx-2.5 + off, y: y0, w: 5, h: 12, vx: 0, vy: -9, dmg: 1, kind: 'gun' });
+      bullets.push({ x: cx-2.5 + off, y: y0, w: 5, h: 12, vx: 0, vy: -9, dmg: 1 + boost, kind: 'gun' });
     }
-    player.cooldown = 9;
+    player.cooldown = raging ? 4 : 9;
   }
   sfx.shoot();
 }
@@ -418,13 +425,18 @@ function update(){
   if (player.alive){
     if (player.invincible > 0) player.invincible--;
     if (player.cooldown > 0) player.cooldown--;
+    if (player.rage > 0){
+      player.rage--;
+      if (player.rage % 60 === 0) updateHud(); // 每秒刷新倒计时
+    }
+    const spd = player.speed * (player.rage > 0 ? 1.3 : 1); // 暴走机动+30%
     let dx = 0, dy = 0;
     if (keys.left) dx -= 1;
     if (keys.right) dx += 1;
     if (keys.up) dy -= 1;
     if (keys.down) dy += 1;
-    player.x = clamp(player.x + dx*player.speed, 2, W-player.w-2);
-    player.y = clamp(player.y + dy*player.speed, H*0.35, H-player.h-4);
+    player.x = clamp(player.x + dx*spd, 2, W-player.w-2);
+    player.y = clamp(player.y + dy*spd, H*0.35, H-player.h-4);
     shoot(); // 自动开火
   }
 
@@ -474,8 +486,8 @@ function update(){
     if (player.alive && aabb(boss, player)) hitPlayer();
   }
 
-  // 副武器：追踪导弹（每 0.8 秒双发）
-  if (player.alive && player.missiles && frame % 48 === 0){
+  // 副武器：追踪导弹（每 0.8 秒双发，暴走时翻倍）
+  if (player.alive && player.missiles && frame % (player.rage > 0 ? 24 : 48) === 0){
     missiles.push({ x: player.x-5, y: player.y+8, w:6, h:12, vx:-1.2, vy:-2, dmg:3 });
     missiles.push({ x: player.x+player.w-1, y: player.y+8, w:6, h:12, vx:1.2, vy:-2, dmg:3 });
   }
@@ -544,6 +556,7 @@ function update(){
       if (d.kind === 'life') lives = Math.min(9, lives+1);
       else if (d.kind === 'armor') player.armor = Math.min(3, player.armor+1);
       else if (d.kind === 'missile') player.missiles = true;
+      else if (d.kind === 'rage') player.rage = RAGE_FRAMES;
       else if (d.kind === 'laser' || d.kind === 'spread'){
         // 同武器再吃升级，换武器从 1 级起
         if (player.weapon === d.kind) player.wlv = Math.min(3, player.wlv+1);
@@ -596,6 +609,18 @@ function draw(){
       CTX.strokeRect(player.x-3, player.y-3, player.w+6, player.h+6);
     }
     drawShip(player.x, player.y, player.w, player.h, '#3fca5a', '#1e7a33', false);
+    if (player.rage > 0){ // 暴走：红色脉冲气场 + 尾部火花
+      CTX.strokeStyle = '#e5483c';
+      CTX.globalAlpha = 0.55 + Math.sin(frame/3) * 0.3;
+      CTX.lineWidth = 3;
+      const rp = 6 + Math.sin(frame/4) * 2;
+      CTX.strokeRect(player.x-rp, player.y-rp, player.w+rp*2, player.h+rp*2);
+      CTX.globalAlpha = 1;
+      if (frame % 2 === 0){
+        particles.push({ x: player.x + Math.random()*player.w, y: player.y+player.h,
+          dx: (Math.random()-0.5)*1.5, dy: 2.2, life: 10, color: '#e5483c' });
+      }
+    }
     if (player.armor > 0){ // 装甲护盾环
       CTX.strokeStyle = '#33d9ff';
       CTX.globalAlpha = 0.5 + Math.sin(frame/5) * 0.2;
@@ -819,7 +844,7 @@ applySnd();
 lives = 3; score = 0;
 initStars();
 startLevel(level);
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光炮 S散弹 M追踪导弹 A装甲 +1加命<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 +1加命<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 syncHud();
