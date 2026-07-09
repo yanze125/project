@@ -104,6 +104,16 @@
   }
   #overlay button:active{transform:translateY(3px);box-shadow:0 1px 0 #7a4a00;}
   #tips{margin-top:6px;font-size:10px;color:#6f6a5e;letter-spacing:.06em;text-align:center;line-height:1.7;flex:0 0 auto;}
+  #girlBox{display:flex;flex-direction:column;align-items:center;gap:6px;}
+  #girlCvs{
+    width:clamp(96px,26vw,132px);
+    image-rendering:pixelated;
+    border:3px solid #3a3a4c;
+    border-radius:6px;
+    background:#101018;
+    box-shadow:0 0 18px rgba(255,139,180,.25);
+  }
+  #girlSay{font-size:12px;color:#ff9dc0;letter-spacing:.08em;}
   @media (pointer:coarse){ #tips{display:none;} h1{margin-bottom:4px;} }
 </style>
 </head>
@@ -126,6 +136,10 @@
   <canvas id="game" width="360" height="600"></canvas>
   <div id="overlay">
     <div class="big" id="ovTitle">THUNDER WING</div>
+    <div id="girlBox" style="display:none">
+      <canvas id="girlCvs" width="64" height="80"></canvas>
+      <div id="girlSay"></div>
+    </div>
     <div class="sub" id="ovSub"></div>
     <button id="ovBtn">开始游戏</button>
     <button id="ovBtn3" style="background:#e5483c;color:#fff;box-shadow:0 4px 0 #5c1410;">∞ 无限挑战</button>
@@ -931,6 +945,124 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
+/* ---------- 过关看板娘(像素风,按关卡确定性生成,百关不重样) ---------- */
+const GIRL_HAIR = [
+  ['#2b2530', '#171219'], ['#6b4226', '#4a2c18'], ['#e0b34a', '#b8892e'],
+  ['#ef93bd', '#c9689a'], ['#84b5ef', '#5a8cc9'], ['#a488ef', '#7b5fc9'], ['#d9564f', '#b03a34']
+];
+const GIRL_DRESS = ['#e5486f', '#4a9df0', '#3fca5a', '#b06ae0', '#ff8a3c', '#2bb3c9'];
+const GIRL_EYE = ['#4a2c18', '#2b6ee0', '#2ba84a', '#8a4bbf'];
+const GIRL_NAME = ['小美', '小樱', '悠悠', '朵朵', '小雅', '琪琪', '甜甜', '星星'];
+const GIRL_SAY = [
+  '司机大哥太帅啦!', '下一关也要带我飞哦~', '哇,一枪一个,好厉害!',
+  '人家给你比心 ❤', '这关都难不倒你,高手!', '继续冲,我看好你!',
+  '打 Boss 的样子最迷人了', '安全驾驶,战场也稳!', '给你加满油,出发!'
+];
+
+function girlRand(seed){
+  let s = (seed * 2654435761) % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => (s = (s * 48271) % 2147483647) / 2147483647;
+}
+
+function drawGirl(lv){
+  const cvs = document.getElementById('girlCvs');
+  const g = cvs.getContext('2d');
+  const rnd = girlRand(lv + 7);
+  const [hair, hairDark] = GIRL_HAIR[(rnd() * GIRL_HAIR.length) | 0];
+  const dress = GIRL_DRESS[(rnd() * GIRL_DRESS.length) | 0];
+  const eye = GIRL_EYE[(rnd() * GIRL_EYE.length) | 0];
+  const twin = rnd() < 0.45;        // 双马尾 or 长发
+  const wink = rnd() < 0.25;        // 眨眼
+  const bowSide = rnd() < 0.5 ? 15 : 43; // 发饰位置
+  const skin = '#ffdcc2';
+
+  g.clearRect(0, 0, 64, 80);
+  g.fillStyle = '#101018';
+  g.fillRect(0, 0, 64, 80);
+  // 背景星光
+  for (let i = 0; i < 14; i++){
+    g.fillStyle = 'rgba(255,255,255,' + (0.15 + rnd() * 0.25) + ')';
+    g.fillRect((rnd() * 64) | 0, (rnd() * 80) | 0, 1, 1);
+  }
+  // 后发
+  g.fillStyle = hairDark;
+  if (twin){
+    g.fillRect(6, 24, 10, 30);  g.fillRect(48, 24, 10, 30);
+    g.fillRect(8, 54, 8, 8);    g.fillRect(48, 54, 8, 8);
+    g.fillRect(14, 20, 36, 12);
+  } else {
+    g.fillRect(14, 20, 36, 44);
+    for (let x = 14; x < 50; x += 6) g.fillRect(x, 64, 4, 4); // 发尾波浪
+  }
+  // 身体/裙装
+  g.fillStyle = dress;
+  g.fillRect(14, 62, 36, 18);
+  g.fillRect(18, 58, 28, 6);
+  // 白色衣领
+  g.fillStyle = '#fff';
+  g.fillRect(27, 58, 10, 4);
+  g.fillRect(30, 62, 4, 3);
+  // 脖子
+  g.fillStyle = skin;
+  g.fillRect(29, 50, 6, 9);
+  // 脸(圆角)
+  g.fillRect(20, 20, 24, 27);
+  g.fillStyle = '#101018';
+  g.fillRect(20, 20, 2, 2); g.fillRect(42, 20, 2, 2);
+  g.fillStyle = hairDark;
+  g.fillRect(20, 45, 2, 2); g.fillRect(42, 45, 2, 2);
+  g.fillStyle = skin;
+  g.fillRect(22, 45, 20, 2); // 下巴收窄
+  // 刘海与顶发
+  g.fillStyle = hair;
+  g.fillRect(18, 12, 28, 8);
+  g.fillRect(20, 10, 24, 4);
+  g.fillRect(16, 16, 6, 18);  g.fillRect(42, 16, 6, 18); // 两侧鬓发
+  for (let i = 0; i < 7; i++){ // 刘海锯齿
+    const bx = 20 + i * 3.4;
+    g.fillRect(bx | 0, 20, 3, 3 + ((i + lv) % 3));
+  }
+  // 发饰蝴蝶结
+  g.fillStyle = '#ff5d8f';
+  g.fillRect(bowSide - 2, 12, 4, 4);
+  g.fillRect(bowSide - 5, 13, 3, 3);
+  g.fillRect(bowSide + 2, 13, 3, 3);
+  // 眉毛
+  g.fillStyle = hairDark;
+  g.fillRect(24, 29, 6, 1);
+  g.fillRect(34, 29, 6, 1);
+  // 眼睛(可眨眼)
+  g.fillStyle = eye;
+  g.fillRect(24, 32, 5, 6);
+  if (wink){ g.fillStyle = hairDark; g.fillRect(34, 34, 6, 2); }
+  else { g.fillRect(35, 32, 5, 6); }
+  g.fillStyle = '#fff';
+  g.fillRect(25, 33, 2, 2);
+  if (!wink) g.fillRect(36, 33, 2, 2);
+  // 腮红
+  g.fillStyle = 'rgba(255,120,150,.5)';
+  g.fillRect(21, 40, 4, 2);
+  g.fillRect(39, 40, 4, 2);
+  // 微笑
+  g.fillStyle = '#d05a5a';
+  g.fillRect(30, 42, 4, 2);
+  g.fillStyle = skin;
+  g.fillRect(30, 42, 4, 1);
+  // 台词与名字
+  const name = GIRL_NAME[(rnd() * GIRL_NAME.length) | 0];
+  const say = GIRL_SAY[(rnd() * GIRL_SAY.length) | 0];
+  document.getElementById('girlSay').textContent = `${name}:「${say}」`;
+}
+
+function showGirl(lv){
+  drawGirl(lv);
+  document.getElementById('girlBox').style.display = '';
+}
+function hideGirl(){
+  document.getElementById('girlBox').style.display = 'none';
+}
+
 /* ---------- 开始/结束 ---------- */
 const overlay = document.getElementById('overlay');
 const ovTitle = document.getElementById('ovTitle');
@@ -943,6 +1075,7 @@ function beginRun(){
   overlay.classList.add('hidden');
   ovBtn2.style.display = 'none';
   document.getElementById('ovBtn3').style.display = 'none';
+  hideGirl();
   running = true;
   startMusic();
   loop();
@@ -991,12 +1124,14 @@ function gameOver(win){
     }
     document.getElementById('ovBtn3').style.display = ''; // 闯关结算也可切去无限挑战
     if (win && level >= MAX_LEVEL){
+      showGirl(level); // 过关福利:像素看板娘
       ovTitle.textContent = '全部通关!';
       ovTitle.className = 'big win';
       ovSub.innerHTML = `100 关雷霆征途结束<br>最终得分 <b style="color:var(--amber)">${score}</b> · 最高分 ${best}`;
       ovBtn.textContent = '重新开始';
       ovBtn.onclick = () => { store.set('plane_lv', 1); lives=3; score=0; startLevel(1, false); beginRun(); };
     } else if (win){
+      showGirl(level); // 过关福利:像素看板娘
       const bonus = level % 5 === 0;
       if (bonus) lives = Math.min(9, lives+1);
       store.set('plane_lv', level+1);
