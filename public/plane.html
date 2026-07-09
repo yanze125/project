@@ -142,7 +142,7 @@ const CTX = CVS.getContext('2d');
 const W = CVS.width, H = CVS.height;
 const MAX_LEVEL = 100;
 
-let player, enemies, bullets, ebullets, drops, particles, stars, boss, missiles;
+let player, enemies, bullets, ebullets, drops, particles, stars, boss, missiles, mines, mineRespawn;
 let keys = {}, lives, score, level = 1, kills, killTarget, spawnTimer, running = false, frame = 0;
 let godMode = true, best = 0;
 
@@ -159,12 +159,15 @@ function levelConfig(lv){
   const isBoss = lv % 5 === 0;
   return {
     isBoss,
-    killTarget: isBoss ? 1 : Math.min(60, 14 + lv * 2),
-    spawnInterval: Math.max(18, 52 - lv),
-    enemySpeed: 1.2 + Math.min(2.2, lv * 0.035),
-    fireRate: Math.min(0.02, 0.004 + lv * 0.0003),
-    midChance: Math.min(0.3, 0.06 + lv * 0.004),
-    bossHp: 30 + lv * 4
+    killTarget: isBoss ? 1 : Math.min(80, 18 + lv * 3),
+    spawnInterval: Math.max(12, Math.round(42 - lv * 1.2)),
+    enemySpeed: 1.4 + Math.min(3.2, lv * 0.06),
+    fireRate: Math.min(0.035, 0.006 + lv * 0.0005),
+    midChance: Math.min(0.4, 0.08 + lv * 0.006),
+    ebulletSpeed: Math.min(6, 3 + lv * 0.05),
+    bossFan: lv >= 20 ? 7 : 5,
+    bossHp: 40 + lv * 6,
+    mineCount: lv >= 3 ? Math.min(3, 1 + Math.floor(lv / 10)) : 0
   };
 }
 let cfg = levelConfig(1);
@@ -277,6 +280,26 @@ function spawnEnemy(){
       vx:0, vy: cfg.enemySpeed, hp:1, score:100 });
   }
 }
+// 游走炸弹:碰到即损命(装甲无效),可击毁
+function spawnMine(){
+  mines.push({
+    x: Math.random() * (W - 26), y: 20 + Math.random() * H * 0.3,
+    w: 26, h: 26,
+    vx: (Math.random() - 0.5) * 2, vy: Math.random() * 1.5 + 0.3,
+    turnTimer: 60 + Math.random() * 60,
+    hp: 8
+  });
+}
+
+function killPlayerByMine(){
+  if (godMode || player.invincible > 0){ sfx.boom(); return; } // 无敌/重生闪烁帧免疫
+  lives--; updateHud();
+  boom(player.x + player.w/2, player.y + player.h/2, true);
+  sfx.boom();
+  if (lives <= 0){ player.alive = false; gameOver(false); }
+  else { player.x = W/2 - 16; player.y = H - 90; player.invincible = 120; }
+}
+
 function spawnBoss(){
   boss = { x: W/2-60, y: -100, w:120, h:80, vx:1.6, hp: cfg.bossHp, maxHp: cfg.bossHp,
     entering: true, fireTimer: 60 };
@@ -320,6 +343,8 @@ function startLevel(lv, carry = true){
     player.missiles = prev.missiles; player.armor = prev.armor;
   }
   enemies = []; bullets = []; ebullets = []; drops = []; particles = []; missiles = []; boss = null;
+  mines = []; mineRespawn = 240;
+  for (let i = 0; i < cfg.mineCount; i++) spawnMine();
   kills = 0; killTarget = cfg.killTarget;
   spawnTimer = 30; frame = 0;
   if (cfg.isBoss) spawnBoss();
@@ -461,9 +486,9 @@ function update(){
       const cx = e.x+e.w/2, cy = e.y+e.h;
       const dx = (player.x+player.w/2) - cx, dy = (player.y+player.h/2) - cy;
       const d = Math.hypot(dx,dy) || 1;
-      ebullets.push({ x: cx-3, y: cy, w:6, h:6, vx: dx/d*3, vy: dy/d*3 });
+      ebullets.push({ x: cx-3, y: cy, w:6, h:6, vx: dx/d*cfg.ebulletSpeed, vy: dy/d*cfg.ebulletSpeed });
     } else if (e.type !== 'mid' && Math.random() < cfg.fireRate && e.y < player.y) {
-      ebullets.push({ x: e.x+e.w/2-3, y: e.y+e.h, w:6, h:6, vx:0, vy:3.4 });
+      ebullets.push({ x: e.x+e.w/2-3, y: e.y+e.h, w:6, h:6, vx:0, vy: cfg.ebulletSpeed + 0.4 });
     }
     if (player.alive && aabb(e, player)) { killEnemy(e); hitPlayer(); }
   }
@@ -477,16 +502,49 @@ function update(){
       if (boss.x < 4 || boss.x > W-boss.w-4) boss.vx *= -1;
       boss.fireTimer--;
       if (boss.fireTimer <= 0){
-        boss.fireTimer = Math.max(40, 90 - level);
-        // 扇形 5 连弹
+        boss.fireTimer = Math.max(36, 84 - level);
+        // 扇形连弹(高关卡 7 连)
         const cx = boss.x+boss.w/2, cy = boss.y+boss.h;
-        for (let i=-2;i<=2;i++){
-          ebullets.push({ x: cx-3, y: cy, w:6, h:6, vx: i*1.1, vy: 3 });
+        const n = cfg.bossFan;
+        for (let i = 0; i < n; i++){
+          ebullets.push({ x: cx-3, y: cy, w:6, h:6, vx: (i-(n-1)/2)*1.1, vy: cfg.ebulletSpeed });
         }
         sfx.hit();
       }
     }
     if (player.alive && aabb(boss, player)) hitPlayer();
+  }
+
+  // 游走炸弹:漂移+反弹+微弱追踪;触碰玩家即损命
+  if (cfg.mineCount){
+    if (mines.length < cfg.mineCount){
+      if (mineRespawn > 0) mineRespawn--;
+      else { spawnMine(); mineRespawn = 240; }
+    }
+    for (const m of mines){
+      m.turnTimer--;
+      if (m.turnTimer <= 0){
+        m.vx += (Math.random() - 0.5) * 1.6;
+        m.vy += (Math.random() - 0.5) * 1.6;
+        m.turnTimer = 60 + Math.random() * 60;
+      }
+      if (player.alive){
+        const dx = player.x + player.w/2 - (m.x + m.w/2);
+        const dy = player.y + player.h/2 - (m.y + m.h/2);
+        const d = Math.hypot(dx, dy) || 1;
+        m.vx += dx/d * 0.02; m.vy += dy/d * 0.02;
+      }
+      const sp = Math.hypot(m.vx, m.vy);
+      if (sp > 1.8){ m.vx = m.vx/sp*1.8; m.vy = m.vy/sp*1.8; }
+      m.x += m.vx; m.y += m.vy;
+      if (m.x < 2 || m.x > W - m.w - 2){ m.vx *= -1; m.x = clamp(m.x, 2, W - m.w - 2); }
+      if (m.y < 2 || m.y > H - m.h - 2){ m.vy *= -1; m.y = clamp(m.y, 2, H - m.h - 2); }
+      if (player.alive && aabb(m, player)){
+        m.dead = true;
+        boom(m.x + m.w/2, m.y + m.h/2, true);
+        killPlayerByMine();
+      }
+    }
   }
 
   // 副武器：追踪导弹（每 0.8 秒双发，暴走时翻倍）
@@ -533,12 +591,28 @@ function update(){
         if (!b.pierce) break;
       }
     }
+    if (!b.dead){ // 炸弹可被主动击毁(hp 8,导弹不锁定它)
+      for (const m of mines){
+        if (m.dead || (b.hits && b.hits.has(m))) continue;
+        if (aabb(b, m)){
+          m.hp -= b.dmg;
+          if (b.pierce) b.hits.add(m); else b.dead = true;
+          if (m.hp <= 0){
+            m.dead = true; score += 500;
+            boom(m.x + m.w/2, m.y + m.h/2, true); sfx.boom();
+            updateHud();
+          } else { boom(b.x, b.y, false); sfx.hit(); }
+          if (!b.pierce) break;
+        }
+      }
+    }
     if (!b.dead && boss && !boss.entering && !(b.hits && b.hits.has(boss)) && aabb(b, boss)){
       if (b.pierce) b.hits.add(boss); else b.dead = true;
       damageBoss(b.dmg, b.x, b.y);
     }
   }
   bullets = bullets.filter((b) => !b.dead && b.y > -34 && b.x > -20 && b.x < W+20);
+  mines = mines.filter((m) => !m.dead);
 
   // 敌方子弹
   for (const b of ebullets){
@@ -675,6 +749,32 @@ function drawEnemyShip(e){
   }
 }
 
+// 游走炸弹:黑色圆体+十字尖刺+红灯(近玩家闪更快)+警戒环
+function drawMine(m){
+  const cx = m.x + m.w/2, cy = m.y + m.h/2, r = m.w/2;
+  CTX.strokeStyle = 'rgba(229,72,60,.35)';
+  CTX.lineWidth = 2;
+  CTX.beginPath();
+  CTX.arc(cx, cy, r + 5 + Math.sin(frame/6)*2, 0, Math.PI*2);
+  CTX.stroke();
+  // 尖刺
+  CTX.fillStyle = '#4a4a58';
+  CTX.fillRect(cx-2, m.y-5, 4, m.h+10);
+  CTX.fillRect(m.x-5, cy-2, m.w+10, 4);
+  // 体
+  CTX.fillStyle = '#22222c';
+  CTX.beginPath(); CTX.arc(cx, cy, r, 0, Math.PI*2); CTX.fill();
+  CTX.strokeStyle = '#565666';
+  CTX.beginPath(); CTX.arc(cx, cy, r, 0, Math.PI*2); CTX.stroke();
+  // 红灯:越近闪越快
+  const d = player ? Math.hypot(player.x - m.x, player.y - m.y) : 999;
+  const blink = d < 90 ? 3 : d < 180 ? 6 : 10;
+  if (((frame / blink) | 0) % 2){
+    CTX.fillStyle = '#ff4a3c';
+    CTX.beginPath(); CTX.arc(cx, cy, 5, 0, Math.PI*2); CTX.fill();
+  }
+}
+
 // Boss:分层旗舰,核心随血量变色闪烁
 function drawBoss(b){
   const {x, y, w, h} = b;
@@ -750,6 +850,8 @@ function draw(){
       CTX.strokeRect(player.x-pad, player.y-pad, player.w+pad*2, player.h+pad*2);
     }
   }
+
+  for (const m of mines){ if (!m.dead) drawMine(m); }
 
   for (const e of enemies){
     drawEnemyShip(e);
@@ -955,7 +1057,7 @@ applySnd();
 lives = 3; score = 0;
 initStars();
 startLevel(level);
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 +1加命<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 +1加命<br>⚠️ 第3关起有游走炸弹,碰到直接损命(装甲无效)!<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 syncHud();
@@ -969,6 +1071,8 @@ window.__planeDebug = {
   get ebullets(){ return ebullets },
   get missiles(){ return missiles },
   get drops(){ return drops },
+  get mines(){ return mines },
+  get cfg(){ return cfg },
   get boss(){ return boss },
   get running(){ return running },
   get god(){ return godMode },
