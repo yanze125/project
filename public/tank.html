@@ -196,6 +196,7 @@
 </div>
 <div id="ctrlBar">
   <button class="cbtn" id="godBtn">★ 无敌</button>
+  <button class="cbtn" id="autoBtn">⚡ 连发</button>
   <button class="cbtn" id="sndBtn">🔊 全开</button>
   <button class="cbtn" id="bgmBtn">🎵 进行曲</button>
   <button class="cbtn" id="rotBtn">⛶ 横屏</button>
@@ -453,7 +454,7 @@ function update(){
     else if (keys.down) moveTank(player,'down');
     else if (keys.left) moveTank(player,'left');
     else if (keys.right) moveTank(player,'right');
-    if (keys.fire) shoot(player);
+    if (keys.fire || autoFire) shoot(player); // 自动连发共享冷却
   }
 
   // 敌人生成
@@ -879,6 +880,15 @@ function setGod(on){
 }
 function toggleGod(){ setGod(!godMode); }
 document.getElementById('godBtn').addEventListener('click', function(){ toggleGod(); this.blur(); });
+
+// 自动连发(共享 22 帧冷却,不影响平衡)
+let autoFire = true;
+function setAuto(on){
+  autoFire = on;
+  document.getElementById('autoBtn').classList.toggle('on', on);
+  try { localStorage.setItem('tank_auto', on ? '1' : '0'); } catch(e){}
+}
+document.getElementById('autoBtn').addEventListener('click', function(){ setAuto(!autoFire); this.blur(); });
 document.getElementById('livesWrap').addEventListener('click', toggleGod); // 点 HUD"生命"也可切换
 addEventListener('keyup', e => {
   const k = KEYMAP[e.code];
@@ -1085,8 +1095,9 @@ level = loadLv();
 lives = 3; score = 0;
 startLevel(level);
 try { setGod(localStorage.getItem('tank_god') !== '0'); } catch(e){ setGod(true); } // 无敌版:默认无敌
+try { setAuto(localStorage.getItem('tank_auto') !== '0'); } catch(e){ setAuto(true); } // 默认自动连发
 ovTitle.textContent = 'TANK BATTLE';
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:左摇杆移动+开火(可换手) · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>${godMode ? '★ 无敌已开启 · 点「★ 无敌」按钮可关' : '★ 无敌已关闭 · 点「★ 无敌」按钮可开'}<br>秘技:G 无敌 · L 跳关 · M 声音 · N 切曲`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关<br>手机:左摇杆移动+开火(可换手) · 电脑:方向键/WASD+空格<br>守住基地 → 消灭全部敌军即可过关<br>${godMode ? '★ 无敌已开启' : '★ 无敌已关闭'} · ${autoFire ? '⚡ 连发已开启' : '⚡ 连发已关闭'},按钮可切换<br>秘技:G 无敌 · L 跳关 · M 声音 · N 切曲`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 draw();
@@ -1105,6 +1116,7 @@ window.__tankDebug = {
   },
   get rot90(){ return document.body.classList.contains('rot90') },
   get god(){ return godMode },
+  get auto(){ return autoFire },
   get lives(){ return lives },
 };
 })();
