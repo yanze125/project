@@ -128,6 +128,7 @@
     <div class="big" id="ovTitle">THUNDER WING</div>
     <div class="sub" id="ovSub"></div>
     <button id="ovBtn">开始游戏</button>
+    <button id="ovBtn3" style="background:#e5483c;color:#fff;box-shadow:0 4px 0 #5c1410;">∞ 无限挑战</button>
     <button id="ovBtn2" style="display:none;font-size:11px;padding:7px 12px;">从第1关开始</button>
   </div>
 </div>
@@ -145,6 +146,9 @@ const MAX_LEVEL = 100;
 let player, enemies, bullets, ebullets, drops, particles, stars, boss, missiles, mines, mineRespawn;
 let keys = {}, lives, score, level = 1, kills, killTarget, spawnTimer, running = false, frame = 0;
 let godMode = true, best = 0;
+// 无限挑战:难度每 25 秒升一档,无关卡结算,冲最高分
+let endless = false, vlv = 1, endlessTime = 0, endlessBest = 0;
+const VLV_FRAMES = 60 * 25;
 
 /* ---------- 存档 ---------- */
 const store = {
@@ -358,12 +362,14 @@ function initStars(){
 }
 const WPN_NAME = { gun: '炮', laser: '激光', spread: '散弹' };
 function updateHud(){
-  document.getElementById('level').textContent = level;
+  document.getElementById('level').textContent = endless ? `∞${vlv}` : level;
   document.getElementById('lives').textContent = lives;
   document.getElementById('score').textContent = score;
-  document.getElementById('enemies').textContent = cfg.isBoss
-    ? (boss ? boss.hp : 0)
-    : Math.max(0, killTarget - kills);
+  document.getElementById('enemies').textContent = endless
+    ? kills
+    : cfg.isBoss
+      ? (boss ? boss.hp : 0)
+      : Math.max(0, killTarget - kills);
   const wpnEl = document.getElementById('wpn');
   wpnEl.textContent =
     `${WPN_NAME[player.weapon]}${player.wlv}` +
@@ -427,7 +433,7 @@ function damageBoss(dmg, x, y){
   if (boss.hp <= 0){
     score += 2000; boom(boss.x+boss.w/2, boss.y+boss.h/2, true); sfx.boom();
     boss = null; updateHud();
-    gameOver(true);
+    if (!endless) gameOver(true); // 无限模式击破 Boss 只拿分不结算
   }
 }
 
@@ -438,11 +444,22 @@ function killEnemy(e){
   sfx.boom();
   dropPower(e.x+e.w/2, e.y+e.h/2);
   updateHud();
-  if (!cfg.isBoss && kills >= killTarget) gameOver(true);
+  if (!endless && !cfg.isBoss && kills >= killTarget) gameOver(true);
 }
 
 function update(){
   frame++;
+  // 无限挑战:按时升档,每 5 档来一个 Boss 同场混战
+  if (endless){
+    endlessTime++;
+    if (endlessTime % VLV_FRAMES === 0){
+      vlv++;
+      cfg = levelConfig(vlv);
+      killTarget = Infinity;
+      if (vlv % 5 === 0 && !boss) spawnBoss();
+      updateHud();
+    }
+  }
   // 星空
   for (const s of stars){ s.y += s.v; if (s.y > H) { s.y = -2; s.x = Math.random()*W; } }
 
@@ -468,8 +485,8 @@ function update(){
     shoot(); // 自动开火
   }
 
-  // 刷怪
-  if (!cfg.isBoss){
+  // 刷怪(无限模式下 Boss 在场也继续刷)
+  if (!cfg.isBoss || endless){
     spawnTimer--;
     // 剩余击杀数不足时少刷，避免尾关刷屏
     const pending = enemies.length;
@@ -925,12 +942,24 @@ function beginRun(){
   ensureAudio();
   overlay.classList.add('hidden');
   ovBtn2.style.display = 'none';
+  document.getElementById('ovBtn3').style.display = 'none';
   running = true;
   startMusic();
   loop();
 }
-ovBtn.onclick = beginRun;
-ovBtn2.onclick = () => { store.set('plane_lv', 1); lives = 3; score = 0; startLevel(1, false); beginRun(); };
+ovBtn.onclick = () => { endless = false; beginRun(); };
+ovBtn2.onclick = () => { endless = false; store.set('plane_lv', 1); lives = 3; score = 0; startLevel(1, false); beginRun(); };
+
+const ovBtn3 = document.getElementById('ovBtn3');
+function startEndless(){
+  endless = true; vlv = 1; endlessTime = 0;
+  lives = 3; score = 0;
+  startLevel(1, false);
+  killTarget = Infinity;
+  updateHud();
+  beginRun();
+}
+ovBtn3.onclick = startEndless;
 
 function saveBest(){
   if (score > best){ best = score; store.set('plane_best', best); }
@@ -941,6 +970,26 @@ function gameOver(win){
   saveBest();
   if (win) sfx.win(); else sfx.lose();
   setTimeout(() => {
+    if (endless){
+      // 无限挑战结算
+      const secs = Math.floor(endlessTime / 60);
+      if (score > endlessBest){ endlessBest = score; store.set('plane_endless_best', endlessBest); }
+      ovTitle.textContent = '挑战结束';
+      ovTitle.className = 'big lose';
+      ovSub.innerHTML = `∞ 无限挑战 · 坚持 <b style="color:var(--amber)">${secs}</b> 秒 · 档位 ${vlv}<br>击杀 ${kills} · 得分 <b style="color:var(--amber)">${score}</b> · 无限最高 ${endlessBest}`;
+      ovBtn.textContent = '再次挑战 ∞';
+      ovBtn.onclick = startEndless;
+      ovBtn2.textContent = '回闯关模式';
+      ovBtn2.style.display = '';
+      ovBtn2.onclick = () => {
+        endless = false; lives = 3; score = 0;
+        startLevel(clamp(parseInt(store.get('plane_lv', '1')) || 1, 1, MAX_LEVEL), false);
+        beginRun();
+      };
+      overlay.classList.remove('hidden');
+      return;
+    }
+    document.getElementById('ovBtn3').style.display = ''; // 闯关结算也可切去无限挑战
     if (win && level >= MAX_LEVEL){
       ovTitle.textContent = '全部通关!';
       ovTitle.className = 'big win';
@@ -1051,13 +1100,14 @@ document.addEventListener('touchmove', (e) => { if (e.target.closest('#stage,#hu
 
 /* ---------- 首屏 ---------- */
 best = parseInt(store.get('plane_best', '0')) || 0;
+endlessBest = parseInt(store.get('plane_endless_best', '0')) || 0;
 level = clamp(parseInt(store.get('plane_lv', '1')) || 1, 1, MAX_LEVEL);
 setGod(store.get('plane_god', '1') !== '0'); // 默认无敌
 applySnd();
 lives = 3; score = 0;
 initStars();
 startLevel(level);
-ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 +1加命<br>⚠️ 第3关起有游走炸弹,碰到直接损命(装甲无效)!<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
+ovSub.innerHTML = `闯关模式 · 共 ${MAX_LEVEL} 关 · 每 5 关 Boss<br>手机:按住屏幕拖动 · 电脑:方向键/WASD · 自动开火<br>道具:W火力 L激光 S散弹 M导弹 A装甲 暴·暴走 +1加命<br>⚠️ 第3关起有游走炸弹,碰到直接损命(装甲无效)!<br>∞ 无限挑战:每25秒升一档直到倒下 · 无限最高:${endlessBest}<br>${godMode ? '★ 无敌已开启,点「★ 无敌」可关' : '★ 无敌已关闭,点「★ 无敌」可开'}<br>最高分:${best} · 秘技:G 无敌 · L 跳关 · M 声音`;
 ovBtn.textContent = level > 1 ? `继续 · 第 ${level} 关` : '开始游戏';
 if (level > 1) ovBtn2.style.display = '';
 syncHud();
@@ -1073,6 +1123,18 @@ window.__planeDebug = {
   get drops(){ return drops },
   get mines(){ return mines },
   get cfg(){ return cfg },
+  get endless(){ return endless },
+  get vlv(){ return vlv },
+  get kills(){ return kills },
+  // 测试用:直接跳档
+  _setVlv(n){
+    if (!endless) return;
+    vlv = n;
+    cfg = levelConfig(n);
+    killTarget = Infinity;
+    if (n % 5 === 0 && !boss) spawnBoss();
+    updateHud();
+  },
   get boss(){ return boss },
   get running(){ return running },
   get god(){ return godMode },
